@@ -4,12 +4,7 @@
 
 <h1 align="center">saynow</h1>
 
-<p align="center">
-  <a href="https://pypi.org/project/saynow/"><img alt="PyPI" src="https://img.shields.io/pypi/v/saynow?logo=pypi&logoColor=white&label=pypi&color=3775a9"></a>
-  <a href="https://www.npmjs.com/package/saynow"><img alt="npm" src="https://img.shields.io/npm/v/saynow?logo=npm&logoColor=white&label=npm&color=cb3837"></a>
-  <img alt="dependencies" src="https://img.shields.io/badge/dependencies-0-2ea44f">
-  <img alt="MIT" src="https://img.shields.io/badge/license-MIT-blue">
-</p>
+<p align="center"><a href="https://www.npmjs.com/package/saynow"><img alt="npm" src="https://img.shields.io/npm/v/saynow?logo=npm&logoColor=white&label=npm&color=cb3837&cacheSeconds=3600"></a>&nbsp;<a href="https://pypi.org/project/saynow/"><img alt="PyPI" src="https://img.shields.io/pypi/v/saynow?logo=pypi&logoColor=white&label=pypi&color=3775a9&cacheSeconds=3600"></a>&nbsp;<a href="https://github.com/dhruvyad/saynow/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/dhruvyad/saynow/actions/workflows/ci.yml/badge.svg"></a>&nbsp;<img alt="dependencies" src="https://img.shields.io/badge/dependencies-0-2ea44f">&nbsp;<a href="https://github.com/dhruvyad/saynow/blob/main/LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-blue"></a></p>
 
 Speak text aloud from the terminal. Built so LLM agents can talk to you.
 
