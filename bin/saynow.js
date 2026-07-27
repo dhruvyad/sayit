@@ -8,6 +8,7 @@ import { parseArgs } from 'node:util';
 
 import { speak } from '../src/speak.js';
 import { canShowBubble, showBubble } from '../src/bubble.js';
+import { acquireLock } from '../src/queue.js';
 import * as history from '../src/history.js';
 import { get, providerIds, providers } from '../src/providers/index.js';
 import {
@@ -258,20 +259,41 @@ async function speakCommand(text, flags) {
   }
 
   const stop = new AbortController();
-  const speech = speak(text, { ...flags, signal: stop.signal }).catch((err) => {
-    process.stderr.write(`saynow: ${err.message}\n`);
-  });
 
-  const answer = await showBubble({
-    text,
-    ask: Boolean(flags.ask),
-    rate: flags.rate,
-    speech,
-    onStop: () => stop.abort(),
-  });
+  // Ask for the bytes rather than letting speak() play them: the page plays
+  // the audio so the transcript can follow its clock exactly.
+  let handed = null;
+  const speech = speak(text, { ...flags, handoff: true, signal: stop.signal })
+    .then((result) => {
+      handed = result?.audio ? result : null;
+      return result;
+    })
+    .catch((err) => {
+      process.stderr.write(`saynow: ${err.message}\n`);
+    });
+
+  await speech;
+
+  // Serialise here, since playback now happens in the page rather than in a
+  // child process the queue could wrap.
+  const release = handed ? await acquireLock() : null;
+
+  let answer;
+  try {
+    answer = await showBubble({
+      text,
+      ask: Boolean(flags.ask),
+      rate: flags.rate,
+      speech: handed ? Promise.resolve() : speech,
+      audio: handed?.audio,
+      audioType: handed?.ext === 'mp3' ? 'audio/mpeg' : 'audio/wav',
+      onStop: () => stop.abort(),
+    });
+  } finally {
+    release?.();
+  }
 
   stop.abort();
-  await speech;
 
   if (!flags.ask) return;
 

@@ -38,6 +38,10 @@ final class Panel: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNa
     func applicationDidFinishLaunching(_: Notification) {
         let config = WKWebViewConfiguration()
         config.userContentController.add(self, name: "size")
+        // The page plays the speech itself so the transcript can follow the
+        // audio clock. Without this it would be blocked as unsolicited
+        // autoplay and the bubble would sit there silent.
+        config.mediaTypesRequiringUserActionForPlayback = []
         // Let the page paint its own background so the panel stays transparent.
         config.setValue(false, forKey: "drawsBackground")
 

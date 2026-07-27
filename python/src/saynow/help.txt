@@ -127,8 +127,8 @@ THE SETTINGS APP
 
 THE BUBBLE
   Whenever saynow speaks it also shows a small bubble in the bottom-right
-  corner carrying the transcript, lit word by word, with a stop button and a
-  dismiss button. It fades out shortly after the audio ends, so a sentence you
+  corner carrying the transcript, lit word by word in time with the audio,
+  with a stop button and a dismiss button. It fades out shortly after the audio ends, so a sentence you
   half-heard is still readable. Pass --no-ui to suppress it, or --quiet to
   keep it while silencing stderr.
 
@@ -183,8 +183,6 @@ LIMITATIONS
   Windows support is best-effort and less tested than macOS and Linux.
   --ask needs the npm build. The pip build speaks the text and then exits 2,
   because the bubble is not yet ported to it.
-  The transcript is lit at an estimated pace rather than in true sync with
-  the audio, so the highlight can drift on unusually long or short text.
 
 EXAMPLES
   saynow "the build finished"

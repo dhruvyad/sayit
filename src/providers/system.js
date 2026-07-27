@@ -1,9 +1,17 @@
 import { spawn, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 export const id = 'system';
 export const label = 'built-in OS speech synthesis (offline, no API key)';
 
-/** The system provider speaks directly — it never produces a file to play. */
+/**
+ * The system voice can either speak straight to the speakers or render to a
+ * file. It speaks directly when nothing is watching, and renders when the
+ * bubble is up so the transcript can follow the audio's own clock — an
+ * estimate is never in sync, and this voice is the only one left guessing.
+ */
 export const speaksDirectly = true;
 
 function backend() {
@@ -62,6 +70,45 @@ export async function speak(text, { voice, rate, save, signal } = {}) {
   }
 
   return run(be.cmd, [...be.args({ voice, rate }), '--', text], signal);
+}
+
+/**
+ * Render to a WAV the caller can play itself.
+ *
+ * Counter-intuitively this is not slower: `say -o` synthesises without
+ * playing in real time, so a 2.6s clip is written in about a second.
+ */
+export async function synthesize(text, { voice, rate } = {}) {
+  const file = path.join(
+    os.tmpdir(),
+    `saynow-system-${process.pid}-${Date.now()}.wav`,
+  );
+
+  try {
+    if (process.platform === 'darwin') {
+      // LEI16 so it is a plain PCM wave any player or browser can read.
+      await run('say', [
+        ...(voice ? ['-v', voice] : []),
+        ...(rate ? ['-r', String(rate)] : []),
+        '-o', file,
+        '--data-format=LEI16@22050',
+        '--', text,
+      ]);
+    } else if (process.platform === 'linux') {
+      const be = backend();
+      await run(be.cmd, [...be.args({ voice, rate }), '-w', file, '--', text]);
+    } else {
+      return null; // Windows keeps speaking directly; it is best-effort anyway.
+    }
+
+    const audio = fs.readFileSync(file);
+    return audio.length > 44 ? { audio, ext: 'wav' } : null;
+  } catch {
+    // Any trouble here just means falling back to speaking directly.
+    return null;
+  } finally {
+    fs.rmSync(file, { force: true });
+  }
 }
 
 export function voices() {

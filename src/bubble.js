@@ -29,13 +29,17 @@ export async function showBubble({
   text,
   ask = false,
   rate,
-  wordOffsetsMs,
   dismissMs = 5000,
   onStop,
   speech,
+  audio,
+  audioType,
   timeoutMs = 120_000,
 } = {}) {
-  const state = { text, ask, rate: rate || 175, wordOffsetsMs, dismissMs };
+  // When the page plays the audio itself, the highlight is driven by the
+  // element's own currentTime — exact by construction, rather than a
+  // words-per-minute guess that starts whenever the page happened to load.
+  const state = { text, ask, rate: rate || 175, dismissMs, hasAudio: Boolean(audio) };
   const page = renderPage(state);
 
   let settle;
@@ -50,6 +54,17 @@ export async function showBubble({
   };
 
   const server = http.createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/audio' && audio) {
+      res.writeHead(200, {
+        'Content-Type': audioType || 'audio/wav',
+        'Content-Length': audio.length,
+        'Accept-Ranges': 'none',
+        'Cache-Control': 'no-store',
+      });
+      res.end(audio);
+      return;
+    }
+
     if (req.method === 'GET' && req.url === '/events') {
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -212,6 +227,9 @@ function browserWindow(url) {
       `--user-data-dir=${path.join(CACHE_DIR, 'browser-profile')}`,
       '--no-first-run',
       '--no-default-browser-check',
+      // The page plays the speech itself; without this it is blocked as
+      // unsolicited autoplay and the bubble sits silent.
+      '--autoplay-policy=no-user-gesture-required',
     ],
     { stdio: 'ignore', detached: false },
   );

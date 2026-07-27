@@ -88,3 +88,5 @@ export async function acquire({ timeoutMs = 120_000 } = {}) {
     }
   }
 }
+
+export { acquire as acquireLock };

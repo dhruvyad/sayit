@@ -427,25 +427,56 @@
         return w;
       });
 
-      // Server-supplied per-word offsets when a provider gives real timings;
-      // otherwise pace off the speaking rate, which the system voice honours.
-      const offsets =
-        state.wordOffsetsMs ||
-        words.map((_, i) => (i * 60000) / (state.rate || 175));
+      // Longer words take longer to say, so weight by length rather than
+      // lighting every word for an equal slice.
+      const weights = words.map((word) => word.length + 1);
+      const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+      const cumulative = [];
+      weights.reduce((sum, w, i) => (cumulative[i] = sum) + w, 0);
 
       let revealed = 0;
       const timers = [];
 
-      offsets.forEach((at, i) => {
-        timers.push(
-          setTimeout(() => {
-            nodes[i].classList.add('said');
-            revealed = i + 1;
-            nodes[i].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-            if (revealed === words.length) finishSpeaking();
-          }, at),
-        );
-      });
+      function litUpTo(count) {
+        for (; revealed < count && revealed < words.length; revealed += 1) {
+          nodes[revealed].classList.add('said');
+          nodes[revealed].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+        if (revealed >= words.length) finishSpeaking();
+      }
+
+      /**
+       * Drive the highlight from the audio element's own clock.
+       *
+       * This is the only way to be genuinely in sync: a words-per-minute
+       * estimate is wrong for every cloud voice, which ignores the rate, and
+       * it starts when the page loads rather than when sound actually begins.
+       * Reading currentTime is exact by construction, and self-corrects if
+       * playback stalls or starts late.
+       */
+      function followAudio(audio) {
+        const tick = () => {
+          const { currentTime, duration } = audio;
+          if (duration > 0) {
+            const played = currentTime / duration;
+            let count = 0;
+            while (count < words.length && cumulative[count] / totalWeight <= played) {
+              count += 1;
+            }
+            litUpTo(count);
+          }
+          if (!audio.ended && !audio.paused) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }
+
+      /** No audio to follow: pace off the speaking rate the system voice honours. */
+      function followEstimate() {
+        const perWord = 60000 / (state.rate || 175);
+        words.forEach((_, i) => {
+          timers.push(setTimeout(() => litUpTo(i + 1), i * perWord));
+        });
+      }
 
       // The reveal animation only estimates pace, so it never starts the
       // dismiss countdown on its own — the CLI reports when audio truly ends.
@@ -464,20 +495,41 @@
         else dismissAfter(900);
       }
 
-      if (window.__SAYNOW__) {
-        const events = new EventSource('/events');
-        events.addEventListener('ended', () => {
+      let player = null;
+
+      if (state.hasAudio) {
+        // The page owns playback, so the highlight and the sound cannot drift.
+        player = new Audio('/audio');
+        player.addEventListener('play', () => followAudio(player));
+        player.addEventListener('ended', () => {
           audioEnded = true;
-          // Audio finished before the estimate caught up: snap the text to done.
-          if (!revealFinished) revealAllNow();
-          else maybeSettle();
+          litUpTo(words.length);
         });
+        player.addEventListener('error', () => {
+          // Fall back rather than sit silent with a frozen transcript.
+          audioEnded = true;
+          followEstimate();
+        });
+        player.play().catch(() => {
+          audioEnded = true;
+          followEstimate();
+        });
+      } else {
+        followEstimate();
+        if (window.__SAYNOW__) {
+          const events = new EventSource('/events');
+          events.addEventListener('ended', () => {
+            audioEnded = true;
+            // Audio finished before the estimate caught up: snap it to done.
+            if (!revealFinished) revealAllNow();
+            else maybeSettle();
+          });
+        }
       }
 
       function revealAllNow() {
         timers.forEach(clearTimeout);
-        nodes.forEach((n) => n.classList.add('said'));
-        finishSpeaking();
+        litUpTo(words.length);
       }
 
       /* ---- dismiss countdown --------------------------------------------- */
@@ -515,6 +567,7 @@
         }).catch(() => {});
 
       function close(reason, payload) {
+        player?.pause();
         el.bubble.classList.add('leaving');
         post('/' + reason, payload);
         setTimeout(() => post('/close'), 260);
@@ -556,6 +609,7 @@
       el.bubble.addEventListener('mouseenter', engage);
 
       el.stop.addEventListener('click', () => {
+        player?.pause();
         post('/stop');
         engage();
         audioEnded = true; // pressing stop ends the audio by definition

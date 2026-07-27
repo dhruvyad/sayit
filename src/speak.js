@@ -41,6 +41,20 @@ export async function speak(text, flags = {}) {
   const provider = get(providerId);
 
   if (provider.speaksDirectly) {
+    // With the bubble up, render to a file and hand it over so the transcript
+    // can follow the audio rather than a words-per-minute guess. Speaking
+    // straight to the speakers stays the path when nothing is watching, since
+    // it starts making sound immediately instead of after synthesis.
+    if (flags.handoff && provider.synthesize) {
+      const rendered = await provider.synthesize(text, {
+        voice: config.voice,
+        rate: flags.rate ?? config.rate,
+      });
+      // Deliberately not archived: the system voice is free and local, and
+      // filling the archive with local notification chatter helps nobody.
+      if (rendered) return rendered;
+    }
+
     await withQueue(flags, () =>
       provider.speak(text, {
         voice: config.voice,
@@ -82,6 +96,12 @@ export async function speak(text, flags = {}) {
     fs.writeFileSync(flags.save, audio);
     return { saved: path.resolve(flags.save) };
   }
+
+  // Hand the bytes to the caller instead of playing them here. The bubble
+  // plays it in the page so the transcript can follow the audio's own clock,
+  // which no estimate can match. The caller takes the playback lock for the
+  // duration, so concurrent agents still take turns.
+  if (flags.handoff) return { audio, ext };
 
   const tmp = path.join(os.tmpdir(), `saynow-${process.pid}-${Date.now()}.${ext}`);
   fs.writeFileSync(tmp, audio, { mode: 0o600 });
