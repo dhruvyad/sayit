@@ -10,18 +10,24 @@ Works with no configuration at all — it falls back to your operating system's
 built-in voice, which is offline, free, and needs no API key. Configure a cloud
 provider when you want it to sound good.
 
-This is the Python distribution. There is an equivalent npm package under the
-same name; both read the same config file, so you can install either one.
+## Status: not published to PyPI
 
-## Install
+The published build of sayit is [the npm package](https://www.npmjs.com/package/sayit).
+This Python port is a complete, working equivalent that lives in the repo but is
+not on PyPI — the name `sayit` is permanently unavailable there, because PyPI's
+similarity check collapses it against an unrelated package named `saylt`.
+
+It will be published if there is demand for it. Open an issue if you want it.
+
+## Install from source
 
 ```bash
-pip install sayit
-# or, to get an isolated CLI on your PATH:
-uv tool install sayit
+git clone https://github.com/dhruvyad/sayit
+uv tool install ./sayit/python
 ```
 
-No third-party dependencies — it uses only the standard library.
+No third-party dependencies — it uses only the standard library. Both builds
+read the same config file, so they are interchangeable on one machine.
 
 ## Usage
 

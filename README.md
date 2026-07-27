@@ -105,6 +105,13 @@ espeak-ng`), and `System.Speech` on Windows. macOS and Windows work out of the
 box. Windows support is best-effort in this release and less tested than the
 others.
 
+## A note on the Python port
+
+`python/` holds a complete, working Python implementation of the same CLI,
+sharing the same config file. It is not published to PyPI and is not required
+to use sayit — the npm package is the shipping build. See
+[`python/README.md`](python/README.md).
+
 ## License
 
 MIT
