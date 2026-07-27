@@ -403,18 +403,13 @@
 
       /* ---- dismiss countdown -------------------------------------------- */
 
-      /* Inset, rounded and bright enough to read as a deliberate countdown.
-         Flush against the bottom edge at 1.5px and 22% white it was
-         indistinguishable from the bubble's own border: it was running the
-         whole time on every question and simply could not be seen. */
       .timer {
         position: absolute;
-        left: 16px;
-        right: 16px;
-        bottom: 6px;
-        height: 2.5px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.5);
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 1.5px;
+        background: rgba(255, 255, 255, 0.22);
         transform-origin: left;
         transform: scaleX(1);
         /* Hidden until a countdown actually runs. Without this it sat at full
