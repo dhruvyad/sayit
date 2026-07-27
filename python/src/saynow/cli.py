@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from . import __version__, config as cfg, history, providers
+from . import __version__, config as cfg, history, markdown, providers
 from .audio import play, queued
 
 SUBCOMMANDS = {"init", "config", "voices", "models", "history", "app", "help"}
@@ -95,7 +95,28 @@ def main(argv: Optional[List[str]] = None) -> int:
         if command == "app":
             return app_command()
 
-    text = " ".join(args.text) if args.text else read_stdin()
+    # --file supplies the document. This build cannot show it — the bubble is
+    # in the npm build — but it can read it, and silently ignoring the flag
+    # would leave a caller believing a report had been delivered.
+    document = None
+    if args.file:
+        try:
+            document = markdown.speech(Path(args.file).read_text(encoding="utf-8"))
+        except OSError as err:
+            raise SystemExit(f"saynow: could not read {args.file}: {err}")
+        if not args.quiet:
+            print(
+                "saynow: showing a document needs the npm build; reading it aloud instead.",
+                file=sys.stderr,
+            )
+
+    if args.sender and not args.quiet:
+        print(
+            "saynow: --from names the sender in the bubble, which needs the npm build.",
+            file=sys.stderr,
+        )
+
+    text = " ".join(args.text) if args.text else (document or read_stdin())
     if not text.strip():
         parser.error("nothing to say. Pass text as an argument or pipe it on stdin.")
 

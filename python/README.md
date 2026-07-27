@@ -70,11 +70,26 @@ progress, or an error that needs attention. Keep it to one short sentence —
 it is spoken aloud, not read. Do not narrate routine progress.
 ```
 
-## The bubble
+## What needs the npm build
 
-The npm build also shows a floating bubble with the transcript and an optional
-reply box (`--ask`). That is not yet ported here, so the pip build speaks and,
-with `--ask`, exits 2. See the [project README](https://github.com/dhruvyad/saynow).
+The floating bubble lives in the npm build, and everything drawn in it needs
+that build too:
+
+| Flag | Here | With `npm install -g saynow` |
+| --- | --- | --- |
+| `--ask` | speaks, exits 2 | shows a reply box and returns the answer |
+| `--file` | reads the document aloud | renders it — tables, code, images |
+| `--from` | ignored, with a note on stderr | names the sender in the header |
+
+Both builds read the same config file, so installing the npm one alongside
+this changes nothing you have already set up.
+
+Claude Code users can install the plugin, which teaches Claude when to speak:
+
+```
+/plugin marketplace add dhruvyad/saynow
+/plugin install saynow@saynow
+```
 
 ## Full reference
 

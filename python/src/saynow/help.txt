@@ -238,8 +238,9 @@ LIMITATIONS
   providers.
   The system provider cannot write files, so it rejects --save.
   Windows support is best-effort and less tested than macOS and Linux.
-  --ask needs the npm build. The pip build speaks the text and then exits 2,
-  because the bubble is not yet ported to it.
+  The bubble is in the npm build, so everything drawn in it needs that build.
+  Under pip, --ask speaks and exits 2, --file reads the document aloud rather
+  than showing it, and --from is ignored with a note on stderr.
 
 EXAMPLES
   saynow "the build finished"

@@ -47,13 +47,17 @@ no" from "they were away from the desk".
 ## Usage
 
 ```bash
-saynow "text to speak"              # speak an argument
-echo "text" | saynow                # speak stdin
-npm test 2>&1 | tail -1 | saynow    # speak a command's last line
-saynow -p openrouter -v Kore "hi"   # pick a provider and voice
-saynow --no-ui "hello"              # speak without the bubble
-saynow --save note.mp3 "hello"      # write a file instead of playing
+saynow "text to speak"                    # speak an argument
+echo "text" | saynow                      # speak stdin
+npm test 2>&1 | tail -1 | saynow          # speak a command's last line
+saynow --from "ci · deploy" "shipped"     # name the sender in the header
+saynow --file report.md "numbers are up"  # show a document, say one line
+saynow -p openrouter -v Kore "hi"         # pick a provider and voice
+saynow --no-ui "hello"                    # speak without the bubble
+saynow --save note.mp3 "hello"            # write a file instead of playing
 ```
+
+`saynow --help` lists every flag, and `man saynow` is the same as a man page.
 
 | Provider | Quality | Needs |
 | --- | --- | --- |
@@ -62,11 +66,36 @@ saynow --save note.mp3 "hello"      # write a file instead of playing
 | `elevenlabs` | Best | `ELEVENLABS_API_KEY` |
 | `openrouter` | **Best** | `OPENROUTER_API_KEY` — 15 speech models, 245 voices |
 
+Long text is rendered a sentence at a time, so a full article starts speaking
+in about three seconds rather than after the whole thing is synthesised.
+
 If a provider is configured but its key is missing, saynow warns on stderr and
 speaks with the system voice anyway: an agent reporting "done" to someone who
 heard nothing is worse than a robotic voice. `--strict` opts out. Concurrent
 calls are serialized machine-wide, so three agents produce three sentences
 rather than one muddle.
+
+## Show a document
+
+```bash
+saynow --file report.md --ask "Weekly numbers are up. Anything look wrong?"
+```
+
+`--file` renders Markdown in the bubble — headings, lists, tables, quotes,
+code, links and images, local or remote. The text argument becomes the only
+thing spoken, which is what a long report usually wants.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/dhruvyad/saynow/main/docs/document.png" alt="a Markdown report rendered in the bubble, with a chart" width="420">
+</p>
+
+Relative image paths resolve against the document's own directory, so a folder
+holding the report and its charts works as-is. The bubble stays open while you
+hover, scroll or type in it, so a document is read at your pace rather than a
+timer's.
+
+Documents are escaped before rendering and only tags saynow builds itself are
+emitted, so one cannot script the bubble.
 
 ## Keep what you synthesised
 
@@ -109,11 +138,12 @@ to speak, so you do not have to explain it in every project:
 Otherwise add this to your `CLAUDE.md`, `AGENTS.md`, or equivalent:
 
 ```markdown
-You can speak to the user out loud with `saynow "<text>"`, and ask a blocking
-question with `saynow --ask "<text>"`, which prints their reply to stdout. Use
-it for things worth interrupting for: a long task finishing, a question that
-blocks progress, or an error that needs attention. Keep it to one short
-sentence — it is spoken aloud, not read. Do not narrate routine progress.
+Speak to the user with `saynow --from "<who> · <task>" --ask "<text>"`. It
+shows a reply box and prints their answer to stdout; exit 2 means they were
+away, which is never consent. Default to `--ask` — almost anything worth
+saying invites a reply. Use `--file report.md` when the answer is a table or a
+chart. Keep it to one short sentence: it is heard, not read, and `--from`
+means you never have to introduce yourself. Do not narrate routine progress.
 ```
 
 ## How the bubble works
