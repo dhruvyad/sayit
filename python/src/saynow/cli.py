@@ -12,47 +12,38 @@ from typing import Any, Dict, List, Optional
 from . import __version__, config as cfg, providers
 from .audio import play, queued
 
-SUBCOMMANDS = {"init", "config", "voices", "help"}
+SUBCOMMANDS = {"init", "config", "voices", "models", "help"}
 
-EPILOG = f"""
-config:
-  saynow config list            Show current settings (keys redacted)
-  saynow config get <key>
-  saynow config set <key> <val>
-  saynow config path            Print the config file location
 
-  Config lives at {cfg.config_path()} with 0600 permissions.
-  Precedence: defaults < config file < environment < flags.
-  Keys: provider, voice, model, speed, openaiApiKey, elevenlabsApiKey
-  Env:  SAYNOW_PROVIDER, SAYNOW_VOICE, SAYNOW_MODEL, SAYNOW_SPEED,
-        OPENAI_API_KEY, ELEVENLABS_API_KEY
+def help_text() -> str:
+    """Rendered from help.txt, which is shared verbatim with the npm build."""
+    raw = (Path(__file__).parent / "help.txt").read_text(encoding="utf-8")
+    return (
+        raw.replace("{{VERSION}}", __version__)
+        .replace("{{PROVIDERS}}", ", ".join(providers.PROVIDERS))
+        .replace("{{CONFIG_PATH}}", str(cfg.config_path()))
+    )
 
-notes:
-  With no provider configured, saynow uses the built-in OS voice — offline,
-  no API key, works out of the box. Configure a cloud provider for better
-  audio quality. Concurrent invocations are queued so speech never overlaps.
 
-examples:
-  saynow "the build finished"
-  saynow -p openai -v nova "tests passed, 42 of 42"
-  saynow --save note.mp3 "long form text"
-  pytest 2>&1 | tail -1 | saynow
-"""
+class _Parser(argparse.ArgumentParser):
+    """argparse cannot generate the shared help text, so override its output
+    entirely and keep argparse only for parsing."""
+
+    def format_help(self) -> str:
+        return help_text()
+
+    def format_usage(self) -> str:
+        return "usage: saynow [options] <text...>\n"
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="saynow",
-        description="Speak text aloud from the terminal.",
-        epilog=EPILOG,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        allow_abbrev=False,
-    )
+    parser = _Parser(prog="saynow", allow_abbrev=False)
     parser.add_argument("text", nargs="*", help="text to speak (or pipe it on stdin)")
     parser.add_argument("-v", "--voice", help="voice to use (see: saynow voices)")
     parser.add_argument(
         "-p", "--provider", choices=sorted(providers.PROVIDERS), help="speech provider"
     )
+    parser.add_argument("-m", "--model", help="model id (see: saynow models)")
     parser.add_argument("-r", "--rate", type=float, help="words per minute (system provider)")
     parser.add_argument("-s", "--speed", type=float, help="speed 0.25-4.0 (cloud providers)")
     parser.add_argument("--save", metavar="FILE", help="write audio to a file instead of playing")
@@ -82,6 +73,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             return config_command(rest)
         if command == "voices":
             return voices_command(args)
+        if command == "models":
+            return models_command()
 
     text = " ".join(args.text) if args.text else read_stdin()
     if not text.strip():
@@ -99,7 +92,7 @@ def read_stdin() -> str:
 def speak(text: str, args: argparse.Namespace) -> int:
     """Always make a sound: degrade to the offline voice rather than failing."""
     config = cfg.resolve(
-        provider=args.provider, voice=args.voice, model=None, speed=args.speed
+        provider=args.provider, voice=args.voice, model=args.model, speed=args.speed
     )
     provider_id = config["provider"]
     selected = providers.get(provider_id)
@@ -142,7 +135,8 @@ def speak(text: str, args: argparse.Namespace) -> int:
             print(os.path.abspath(args.save))
         return 0
 
-    tmp = Path(tempfile.gettempdir()) / f"saynow-{os.getpid()}.mp3"
+    suffix = "wav" if provider_id in providers.WAV_PROVIDERS else "mp3"
+    tmp = Path(tempfile.gettempdir()) / f"saynow-{os.getpid()}.{suffix}"
     tmp.write_bytes(audio)
     os.chmod(tmp, 0o600)
     try:
@@ -243,6 +237,22 @@ def voices_command(args: argparse.Namespace) -> int:
     width = max(len(name) for name, _, _ in listed)
     for name, locale, note in listed:
         print(f"{name:<{width}}  {locale:<8} {note}".rstrip())
+    return 0
+
+
+def models_command() -> int:
+    listed = providers.openrouter_audio_models()
+    if not listed:
+        print("Could not reach OpenRouter to list models.")
+        return 0
+
+    print("OpenRouter models that can emit speech:\n")
+    for model in listed:
+        print(f"  {model}")
+    print(
+        '\nUse one with: saynow -p openrouter -m <id> "text"'
+        "\nOr set a default: saynow config set model <id>"
+    )
     return 0
 
 

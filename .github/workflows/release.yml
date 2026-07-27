@@ -1,0 +1,99 @@
+# Publishes saynow to npm and PyPI when a GitHub release is published.
+#
+# One-time setup before the first run:
+#
+#   npm    Create a granular access token at
+#          https://www.npmjs.com/settings/dhruvy/tokens with type "Automation"
+#          (that type is exempt from the 2FA challenge) and read/write access
+#          to the saynow package. Save it as the repository secret NPM_TOKEN.
+#
+#   PyPI   Add a trusted publisher at
+#          https://pypi.org/manage/project/saynow/settings/publishing/
+#          owner: dhruvyad, repo: saynow, workflow: release.yml,
+#          environment: pypi. No token is stored — the job authenticates over
+#          OIDC, so there is no long-lived credential to leak or rotate.
+#
+# To cut a release: bump the version in package.json, python/pyproject.toml and
+# python/src/saynow/__init__.py, update the man page header, commit, then
+# publish a GitHub release tagged v<version>. The verify job refuses to publish
+# if any of those disagree with the tag.
+
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish, without the leading v
+        required: true
+
+jobs:
+  verify:
+    name: verify version and tests
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Versions agree with the tag
+        id: check
+        run: |
+          EXPECTED="${{ github.event.inputs.version || github.event.release.tag_name }}"
+          EXPECTED="${EXPECTED#v}"
+          NPM=$(node -p "require('./package.json').version")
+          PY=$(grep -m1 '^version' python/pyproject.toml | cut -d'"' -f2)
+          INIT=$(grep -m1 '__version__' python/src/saynow/__init__.py | cut -d'"' -f2)
+
+          echo "tag=$EXPECTED npm=$NPM pyproject=$PY __init__=$INIT"
+          if [ "$NPM" != "$EXPECTED" ] || [ "$PY" != "$EXPECTED" ] || [ "$INIT" != "$EXPECTED" ]; then
+            echo "::error::version mismatch — tag says $EXPECTED but the tree says npm=$NPM pyproject=$PY __init__=$INIT"
+            exit 1
+          fi
+          echo "version=$EXPECTED" >> "$GITHUB_OUTPUT"
+
+      - run: npm test
+
+  npm:
+    name: publish to npm
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for provenance attestation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: https://registry.npmjs.org
+      - name: Publish
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  pypi:
+    name: publish to PyPI
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # trusted publishing, no stored token
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build python/
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: python/dist/

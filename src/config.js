@@ -9,7 +9,11 @@ export const CONFIG_DIR = process.env.SAYNOW_CONFIG_DIR
 export const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
 
 /** Keys that hold secrets. Never printed in full. */
-export const SECRET_KEYS = new Set(['openaiApiKey', 'elevenlabsApiKey']);
+export const SECRET_KEYS = new Set([
+  'openaiApiKey',
+  'elevenlabsApiKey',
+  'openrouterApiKey',
+]);
 
 export const DEFAULTS = {
   provider: 'system',
@@ -70,6 +74,8 @@ export function apiKey(provider, config = load()) {
       return process.env.OPENAI_API_KEY || config.openaiApiKey || null;
     case 'elevenlabs':
       return process.env.ELEVENLABS_API_KEY || config.elevenlabsApiKey || null;
+    case 'openrouter':
+      return process.env.OPENROUTER_API_KEY || config.openrouterApiKey || null;
     default:
       return null;
   }

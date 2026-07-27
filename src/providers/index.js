@@ -1,8 +1,9 @@
 import * as system from './system.js';
 import * as openai from './openai.js';
 import * as elevenlabs from './elevenlabs.js';
+import * as openrouter from './openrouter.js';
 
-export const providers = { system, openai, elevenlabs };
+export const providers = { system, openai, elevenlabs, openrouter };
 
 export const providerIds = Object.keys(providers);
 

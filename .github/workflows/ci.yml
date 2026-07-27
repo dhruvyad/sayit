@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  node:
+    name: node ${{ matrix.node }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: ['18', '20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm test
+      - name: CLI smoke test
+        run: |
+          node bin/saynow.js --version
+          node bin/saynow.js --help > /dev/null
+          node bin/saynow.js config list > /dev/null
+          # The system provider needs no credentials, so --strict must succeed.
+          node bin/saynow.js --strict --help > /dev/null
+
+  python:
+    name: python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Build and install
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build python/
+          python -m pip install python/dist/*.whl
+      - name: CLI smoke test
+        run: |
+          saynow --version
+          saynow --help > /dev/null
+          saynow config list > /dev/null
+
+  parity:
+    name: builds agree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Versions match across package.json, pyproject and __init__
+        run: |
+          NPM=$(node -p "require('./package.json').version")
+          PY=$(grep -m1 '^version' python/pyproject.toml | cut -d'"' -f2)
+          INIT=$(grep -m1 '__version__' python/src/saynow/__init__.py | cut -d'"' -f2)
+          echo "npm=$NPM pyproject=$PY __init__=$INIT"
+          test "$NPM" = "$PY" && test "$PY" = "$INIT"
+      - name: Help text is byte-identical in both builds
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build python/ && python -m pip install python/dist/*.whl
+          node bin/saynow.js --help > /tmp/node-help.txt
+          saynow --help > /tmp/python-help.txt
+          diff /tmp/node-help.txt /tmp/python-help.txt

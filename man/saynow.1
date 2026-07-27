@@ -1,0 +1,213 @@
+.TH SAYNOW 1 "2026-07-27" "saynow 0.2.0" "User Commands"
+.SH NAME
+saynow \- speak text aloud from the terminal
+.SH SYNOPSIS
+.B saynow
+[\fIoptions\fR] \fItext\fR...
+.br
+.B saynow
+[\fIoptions\fR]
+.br
+.B saynow
+\fIcommand\fR [\fIargs\fR]
+.SH DESCRIPTION
+.B saynow
+plays synthesised speech through the speakers. It is built to be called by LLM
+agents that need to tell a human something out loud, and runs with no setup by
+falling back to the operating system's built-in voice.
+.PP
+With no text arguments and standard input not a terminal,
+.B saynow
+reads the text to speak from standard input.
+.PP
+The full reference is also available with
+.BR "saynow --help" .
+.SH COMMANDS
+.TP
+.B init
+Interactively pick a provider and store an API key.
+.TP
+.B config list
+Print every setting and its value, with secrets redacted.
+.TP
+.BI "config get " key
+Print one setting.
+.TP
+.BI "config set " "key value"
+Change one setting and save it.
+.TP
+.B config path
+Print the absolute path of the config file.
+.TP
+.B voices
+List voice names valid for the active provider.
+.TP
+.B models
+List OpenRouter models that can emit speech.
+.TP
+.B help
+Show the full help text.
+.SH OPTIONS
+.TP
+.BR \-v ", " \-\-voice " " \fIname\fR
+Voice name. Valid values differ per provider; run
+.BR "saynow voices" .
+Defaults to the provider's own default.
+.TP
+.BR \-p ", " \-\-provider " " \fIid\fR
+Where speech is synthesised: \fBsystem\fR, \fBopenai\fR, \fBelevenlabs\fR or
+\fBopenrouter\fR. Defaults to \fBsystem\fR, or the configured provider.
+.TP
+.BR \-m ", " \-\-model " " \fIid\fR
+Model id, for providers that have models. Run
+.BR "saynow models" .
+.TP
+.BR \-r ", " \-\-rate " " \fIn\fR
+Speaking rate in words per minute. The \fBsystem\fR provider only. Typical
+range 150 to 350.
+.TP
+.BR \-s ", " \-\-speed " " \fIn\fR
+Playback speed multiplier, 0.25 to 4.0. Cloud providers only; \fBopenrouter\fR
+ignores it. Defaults to 1.
+.TP
+.BI \-\-save " file"
+Write audio to \fIfile\fR instead of playing it, and print the absolute path.
+Not supported by the \fBsystem\fR provider. The format is mp3, or wav for
+\fBopenrouter\fR.
+.TP
+.B \-\-no\-queue
+Do not wait for other
+.B saynow
+processes. Speech from concurrent calls may overlap.
+.TP
+.B \-\-strict
+Exit non\-zero when the chosen provider is unusable, instead of falling back to
+the system voice.
+.TP
+.BR \-q ", " \-\-quiet
+Suppress warnings on standard error. Exit codes are unaffected.
+.TP
+.BR \-h ", " \-\-help
+Show the full help text.
+.TP
+.B \-\-version
+Print the version and exit.
+.SH PROVIDERS
+.TS
+tab(|);
+l l l.
+\fBsystem\fR|no credential|offline, built into the OS
+\fBopenai\fR|OPENAI_API_KEY|dedicated speech endpoint
+\fBelevenlabs\fR|ELEVENLABS_API_KEY|most natural, highest cost
+\fBopenrouter\fR|OPENROUTER_API_KEY|audio\-capable chat models
+.TE
+.PP
+If a cloud provider is selected but no credential is found,
+.B saynow
+warns on standard error, speaks with the system voice, and exits 0. An agent
+reporting success to someone who heard nothing is worse than a robotic voice.
+Use
+.B \-\-strict
+to make this an error instead.
+.PP
+Concurrent
+.B saynow
+processes serialise through a lock file, so three calls produce three sentences
+rather than one muddle.
+.SH CONFIGURATION
+Settings live in \fI~/.config/saynow/config.json\fR, created with mode 0600.
+Precedence, from lowest to highest, is built\-in defaults, the config file,
+environment variables, then command\-line flags.
+.PP
+Settings accepted by \fBconfig set\fR: \fBprovider\fR, \fBvoice\fR,
+\fBmodel\fR, \fBspeed\fR, \fBopenaiApiKey\fR, \fBelevenlabsApiKey\fR and
+\fBopenrouterApiKey\fR.
+.PP
+API keys are deliberately not accepted as flags, because argv is visible to
+.BR ps (1)
+and is saved in shell history. Use
+.BR "saynow init" ,
+.BR "saynow config set" ,
+or the environment variable.
+.SH ENVIRONMENT
+.TP
+.BR SAYNOW_PROVIDER ", " SAYNOW_VOICE ", " SAYNOW_MODEL ", " SAYNOW_SPEED
+Equivalent to the matching command\-line flags.
+.TP
+.B SAYNOW_CONFIG_DIR
+Override the directory holding \fIconfig.json\fR.
+.TP
+.BR OPENAI_API_KEY ", " ELEVENLABS_API_KEY ", " OPENROUTER_API_KEY
+Provider credentials. These take precedence over the config file.
+.SH EXIT STATUS
+.TP
+.B 0
+Spoke successfully, or wrote the file when \fB\-\-save\fR was given.
+.TP
+.B 1
+Usage error, unusable provider under \fB\-\-strict\fR, network or API failure,
+or no audio player found on the system.
+.SH FILES
+.TP
+.I ~/.config/saynow/config.json
+Configuration, mode 0600.
+.TP
+.I $TMPDIR/saynow.lock
+Lock file serialising concurrent playback.
+.SH LIMITATIONS
+.B openrouter
+has no dedicated speech endpoint.
+.B saynow
+drives an audio\-capable chat model and instructs it to speak the text
+verbatim. It normally complies but may occasionally rephrase; use
+.B openai
+or
+.B elevenlabs
+when exact reproduction matters.
+.PP
+The
+.B system
+provider cannot write files, so it rejects \fB\-\-save\fR.
+.PP
+Windows support is best\-effort and less tested than macOS and Linux.
+.SH EXAMPLES
+Speak a sentence with the offline system voice:
+.PP
+.RS
+.EX
+saynow "the build finished"
+.EE
+.RE
+.PP
+Speak the last line of a command's output:
+.PP
+.RS
+.EX
+npm test 2>&1 | tail -1 | saynow
+.EE
+.RE
+.PP
+Use a specific provider, model and voice:
+.PP
+.RS
+.EX
+saynow -p openrouter -m openai/gpt-audio -v nova "routed via OpenRouter"
+.EE
+.RE
+.PP
+Write audio to a file instead of playing it:
+.PP
+.RS
+.EX
+saynow --save note.mp3 "write to a file instead of playing"
+.EE
+.RE
+.SH SEE ALSO
+.BR say (1)
+on macOS,
+.BR espeak-ng (1)
+on Linux.
+.PP
+Project home: https://github.com/dhruvyad/saynow
+.SH AUTHOR
+Dhruv Yadav

@@ -1,0 +1,118 @@
+saynow {{VERSION}} — speak text aloud from the terminal
+
+Plays synthesised speech through the speakers. Built to be called by LLM
+agents that need to tell a human something out loud. Runs with no setup by
+falling back to the operating system's built-in voice.
+
+USAGE
+  saynow [options] <text...>    Speak the given text
+  saynow [options]              Speak text read from stdin
+  saynow <command> [args]       Run a subcommand
+
+COMMANDS
+  init                   Interactively pick a provider and store an API key
+  config list            Print every setting and its value, secrets redacted
+  config get <key>       Print one setting
+  config set <key> <v>   Change one setting and save it
+  config path            Print the absolute path of the config file
+  voices                 List voice names valid for the active provider
+  models                 List OpenRouter models that can emit speech
+  help                   Show this text
+
+OPTIONS
+  -v, --voice <name>     Voice name. Valid values differ per provider; run
+                         saynow voices. Default: the provider's own default.
+  -p, --provider <id>    Where speech is synthesised. One of:
+                         {{PROVIDERS}}.
+                         Default: system, or the configured provider.
+  -m, --model <id>       Model id, for providers that have models (openai,
+                         elevenlabs, openrouter). Run saynow models.
+  -r, --rate <n>         Speaking rate in words per minute. system provider
+                         only. Typical range 150-350. Default: OS default.
+  -s, --speed <n>        Playback speed multiplier, 0.25 to 4.0. Cloud
+                         providers only; openrouter ignores it. Default: 1.
+      --save <file>      Write audio to <file> instead of playing it, and
+                         print the absolute path. Not supported by the system
+                         provider. Format is mp3, or wav for openrouter.
+      --no-queue         Do not wait for other saynow processes. Speech from
+                         concurrent calls may overlap.
+      --strict           Exit non-zero when the chosen provider is unusable,
+                         instead of falling back to the system voice.
+  -q, --quiet            Suppress warnings on stderr. Exit codes unaffected.
+  -h, --help             Show this text
+      --version          Print the version and exit
+
+PROVIDERS
+  id           credential            quality  notes
+  system       none                  fair     offline, built into the OS
+  openai       OPENAI_API_KEY        good     dedicated speech endpoint
+  elevenlabs   ELEVENLABS_API_KEY    best     most natural, highest cost
+  openrouter   OPENROUTER_API_KEY    good     routes to audio-capable chat
+                                              models, see LIMITATIONS
+
+CONFIGURATION
+  File: {{CONFIG_PATH}}, created with mode 0600.
+  Precedence, lowest to highest:
+    built-in defaults < config file < environment variables < flags
+
+  Settings, for use with config set:
+    provider           system | openai | elevenlabs | openrouter
+    voice              voice name, see saynow voices
+    model              model id, see saynow models
+    speed              number between 0.25 and 4.0
+    openaiApiKey       secret, redacted by config list
+    elevenlabsApiKey   secret, redacted by config list
+    openrouterApiKey   secret, redacted by config list
+
+  Environment variables:
+    SAYNOW_PROVIDER    same values as --provider
+    SAYNOW_VOICE       same values as --voice
+    SAYNOW_MODEL       same values as --model
+    SAYNOW_SPEED       same values as --speed
+    SAYNOW_CONFIG_DIR  override the config directory
+    OPENAI_API_KEY, ELEVENLABS_API_KEY, OPENROUTER_API_KEY
+
+  API keys are deliberately not accepted as flags: argv is visible to ps and
+  is saved in shell history. Use saynow init, config set, or the env var.
+
+BEHAVIOUR
+  Fallback   If a cloud provider is selected but no credential is found,
+             saynow warns on stderr, speaks with the system voice, and exits
+             0. An agent reporting success to someone who heard nothing is
+             worse than a robotic voice. Use --strict to make it an error.
+  Queueing   Concurrent saynow processes serialise through a lock file, so
+             three calls produce three sentences rather than one muddle.
+  Stdin      With no text arguments and stdin not a terminal, saynow reads
+             the text from stdin.
+  Literals   To speak a word that is also a command name, pipe it instead:
+             echo "config" | saynow
+
+EXIT CODES
+  0   spoke successfully, or wrote the file when --save was given
+  1   usage error, unusable provider under --strict, network or API failure,
+      or no audio player found on the system
+
+LIMITATIONS
+  openrouter has no dedicated speech endpoint. saynow drives an audio-capable
+  chat model and instructs it to speak the text verbatim. It normally
+  complies but may occasionally rephrase. Use openai or elevenlabs when exact
+  reproduction matters.
+  The system provider cannot write files, so it rejects --save.
+  Windows support is best-effort and less tested than macOS and Linux.
+
+EXAMPLES
+  saynow "the build finished"
+  saynow -p openai -v nova "tests passed, 42 of 42"
+  saynow -p openrouter -m openai/gpt-audio "routed through OpenRouter"
+  saynow -r 320 "read this quickly"
+  saynow --save note.mp3 "write to a file instead of playing"
+  saynow --strict -p elevenlabs "fail loudly if the key is missing"
+  npm test 2>&1 | tail -1 | saynow
+  saynow config set provider openai
+
+FOR AGENTS
+  Call saynow when a human needs interrupting: a long task finished, a
+  question blocks progress, or an error needs attention. Keep it to one short
+  sentence, since it is heard rather than read. Do not narrate routine
+  progress. Prefer the default provider unless the user asked for a specific
+  voice or quality level.

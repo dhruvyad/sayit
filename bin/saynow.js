@@ -20,56 +20,16 @@ import {
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const { version } = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 
-const HELP = `saynow ${version} — speak text aloud from the terminal
-
-USAGE
-  saynow <text...>              Speak the given text
-  echo "text" | saynow          Speak text from stdin
-  saynow init                   Configure a provider and API key
-  saynow config <cmd>           Inspect or edit configuration
-  saynow voices                 List voices for the active provider
-
-OPTIONS
-  -v, --voice <name>     Voice to use (see: saynow voices)
-  -p, --provider <id>    ${providerIds.join(' | ')}
-  -r, --rate <n>         Words per minute (system provider only)
-  -s, --speed <n>        Playback speed 0.25-4.0 (cloud providers only)
-      --save <file>      Write audio to a file instead of playing it
-      --no-queue         Speak immediately, overlapping any in-flight speech
-      --strict           Fail instead of falling back to the system voice
-  -q, --quiet            Suppress warnings on stderr
-  -h, --help             Show this help
-      --version          Show version
-
-CONFIG
-  saynow config list            Show current settings (keys redacted)
-  saynow config get <key>
-  saynow config set <key> <val>
-  saynow config path            Print the config file location
-
-  Config lives at ${CONFIG_PATH} with 0600 permissions.
-  Precedence: defaults < config file < environment < flags.
-  Keys: provider, voice, model, speed, openaiApiKey, elevenlabsApiKey
-  Env:  SAYNOW_PROVIDER, SAYNOW_VOICE, SAYNOW_MODEL, SAYNOW_SPEED,
-        OPENAI_API_KEY, ELEVENLABS_API_KEY
-
-NOTES
-  With no provider configured, saynow uses the built-in OS voice — offline,
-  no API key, works out of the box. Configure a cloud provider for better
-  audio quality.
-
-  Concurrent invocations are queued so speech never overlaps.
-
-EXAMPLES
-  saynow "the build finished"
-  saynow -p openai -v nova "tests passed, 42 of 42"
-  saynow --save note.mp3 "long form text"
-  npm test 2>&1 | tail -1 | saynow
-`;
+const HELP = fs
+  .readFileSync(path.join(ROOT, 'help.txt'), 'utf8')
+  .replaceAll('{{VERSION}}', version)
+  .replaceAll('{{PROVIDERS}}', providerIds.join(', '))
+  .replaceAll('{{CONFIG_PATH}}', CONFIG_PATH);
 
 const OPTIONS = {
   voice: { type: 'string', short: 'v' },
   provider: { type: 'string', short: 'p' },
+  model: { type: 'string', short: 'm' },
   rate: { type: 'string', short: 'r' },
   speed: { type: 'string', short: 's' },
   save: { type: 'string' },
@@ -80,7 +40,7 @@ const OPTIONS = {
   version: { type: 'boolean' },
 };
 
-const SUBCOMMANDS = new Set(['init', 'config', 'voices', 'help']);
+const SUBCOMMANDS = new Set(['init', 'config', 'voices', 'models', 'help']);
 
 async function main() {
   let values;
@@ -96,11 +56,12 @@ async function main() {
   }
 
   if (values.version) return void console.log(version);
-  if (values.help || positionals[0] === 'help') return void console.log(HELP);
+  if (values.help || positionals[0] === 'help') return void process.stdout.write(HELP);
 
   const flags = {
     voice: values.voice,
     provider: values.provider,
+    model: values.model,
     rate: values.rate ? Number(values.rate) : undefined,
     speed: values.speed ? Number(values.speed) : undefined,
     save: values.save,
@@ -124,6 +85,7 @@ async function main() {
     if (command === 'init') return initCommand();
     if (command === 'config') return configCommand(rest);
     if (command === 'voices') return voicesCommand(flags);
+    if (command === 'models') return modelsCommand();
   }
 
   const text = positionals.length ? positionals.join(' ') : await readStdin();
@@ -247,6 +209,23 @@ async function voicesCommand(flags) {
   for (const v of list) {
     console.log(`${v.name.padEnd(width)}  ${v.locale.padEnd(8)} ${v.note}`.trimEnd());
   }
+}
+
+async function modelsCommand() {
+  const { audioModels } = providers.openrouter;
+  const list = await audioModels();
+
+  if (!list.length) {
+    console.log('Could not reach OpenRouter to list models.');
+    return;
+  }
+
+  console.log('OpenRouter models that can emit speech:\n');
+  for (const model of list) console.log(`  ${model}`);
+  console.log(
+    `\nUse one with: saynow -p openrouter -m <id> "text"` +
+      `\nOr set a default: saynow config set model <id>`,
+  );
 }
 
 function fail(message) {

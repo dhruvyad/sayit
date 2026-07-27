@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-SECRET_KEYS = {"openaiApiKey", "elevenlabsApiKey"}
+SECRET_KEYS = {"openaiApiKey", "elevenlabsApiKey", "openrouterApiKey"}
 
 DEFAULTS: Dict[str, Any] = {
     "provider": "system",
@@ -82,6 +82,8 @@ def api_key(provider: str, config: Optional[Dict[str, Any]] = None) -> Optional[
         return os.environ.get("OPENAI_API_KEY") or config.get("openaiApiKey")
     if provider == "elevenlabs":
         return os.environ.get("ELEVENLABS_API_KEY") or config.get("elevenlabsApiKey")
+    if provider == "openrouter":
+        return os.environ.get("OPENROUTER_API_KEY") or config.get("openrouterApiKey")
     return None
 
 
