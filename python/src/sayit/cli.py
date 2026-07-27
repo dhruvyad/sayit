@@ -1,0 +1,255 @@
+"""Command-line interface for sayit."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+import tempfile
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from . import __version__, config as cfg, providers
+from .audio import play, queued
+
+SUBCOMMANDS = {"init", "config", "voices", "help"}
+
+EPILOG = f"""
+config:
+  sayit config list            Show current settings (keys redacted)
+  sayit config get <key>
+  sayit config set <key> <val>
+  sayit config path            Print the config file location
+
+  Config lives at {cfg.config_path()} with 0600 permissions.
+  Precedence: defaults < config file < environment < flags.
+  Keys: provider, voice, model, speed, openaiApiKey, elevenlabsApiKey
+  Env:  SAYIT_PROVIDER, SAYIT_VOICE, SAYIT_MODEL, SAYIT_SPEED,
+        OPENAI_API_KEY, ELEVENLABS_API_KEY
+
+notes:
+  With no provider configured, sayit uses the built-in OS voice — offline,
+  no API key, works out of the box. Configure a cloud provider for better
+  audio quality. Concurrent invocations are queued so speech never overlaps.
+
+examples:
+  sayit "the build finished"
+  sayit -p openai -v nova "tests passed, 42 of 42"
+  sayit --save note.mp3 "long form text"
+  pytest 2>&1 | tail -1 | sayit
+"""
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="sayit",
+        description="Speak text aloud from the terminal.",
+        epilog=EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    parser.add_argument("text", nargs="*", help="text to speak (or pipe it on stdin)")
+    parser.add_argument("-v", "--voice", help="voice to use (see: sayit voices)")
+    parser.add_argument(
+        "-p", "--provider", choices=sorted(providers.PROVIDERS), help="speech provider"
+    )
+    parser.add_argument("-r", "--rate", type=float, help="words per minute (system provider)")
+    parser.add_argument("-s", "--speed", type=float, help="speed 0.25-4.0 (cloud providers)")
+    parser.add_argument("--save", metavar="FILE", help="write audio to a file instead of playing")
+    parser.add_argument(
+        "--no-queue", action="store_true", help="speak immediately, overlapping in-flight speech"
+    )
+    parser.add_argument(
+        "--strict", action="store_true", help="fail instead of falling back to the system voice"
+    )
+    parser.add_argument("-q", "--quiet", action="store_true", help="suppress warnings on stderr")
+    parser.add_argument("--version", action="version", version=__version__)
+    return parser
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    if args.text and args.text[0] in SUBCOMMANDS:
+        command, rest = args.text[0], args.text[1:]
+        if command == "help":
+            parser.print_help()
+            return 0
+        if command == "init":
+            return init_command()
+        if command == "config":
+            return config_command(rest)
+        if command == "voices":
+            return voices_command(args)
+
+    text = " ".join(args.text) if args.text else read_stdin()
+    if not text.strip():
+        parser.error("nothing to say. Pass text as an argument or pipe it on stdin.")
+
+    return speak(text.strip(), args)
+
+
+def read_stdin() -> str:
+    if sys.stdin.isatty():
+        return ""
+    return sys.stdin.read()
+
+
+def speak(text: str, args: argparse.Namespace) -> int:
+    """Always make a sound: degrade to the offline voice rather than failing."""
+    config = cfg.resolve(
+        provider=args.provider, voice=args.voice, model=None, speed=args.speed
+    )
+    provider_id = config["provider"]
+    selected = providers.get(provider_id)
+    key = cfg.api_key(provider_id, config)
+
+    if not selected["speaks_directly"] and not key:
+        if args.strict:
+            raise SystemExit(
+                f"sayit: provider \"{provider_id}\" needs a key but none was found. "
+                f"Set {selected['env_var']} or run: sayit init"
+            )
+        warn(
+            args,
+            f"no {selected['env_var']} found — using the offline system voice. "
+            f"Run `sayit init` to configure {provider_id}.",
+        )
+        provider_id, key = "system", None
+
+    if provider_id == "system":
+        if args.save:
+            raise SystemExit(
+                "sayit: --save is not supported by the system provider. "
+                "Configure openai or elevenlabs to write audio files."
+            )
+        with queued(enabled=not args.no_queue):
+            providers.speak_system(text, voice=config.get("voice"), rate=args.rate)
+        return 0
+
+    audio = providers.SYNTHESIZERS[provider_id](
+        text,
+        api_key=key,
+        voice=config.get("voice"),
+        model=config.get("model"),
+        speed=config.get("speed"),
+    )
+
+    if args.save:
+        Path(args.save).write_bytes(audio)
+        if not args.quiet:
+            print(os.path.abspath(args.save))
+        return 0
+
+    tmp = Path(tempfile.gettempdir()) / f"sayit-{os.getpid()}.mp3"
+    tmp.write_bytes(audio)
+    os.chmod(tmp, 0o600)
+    try:
+        with queued(enabled=not args.no_queue):
+            play(str(tmp))
+    finally:
+        tmp.unlink(missing_ok=True)
+    return 0
+
+
+def init_command() -> int:
+    print("Configure sayit. Press enter to keep the current value.\n")
+    for name, meta in providers.PROVIDERS.items():
+        print(f"  {name:<12} {meta['label']}")
+    print()
+
+    config = cfg.load()
+    chosen = input(f"Provider [{config['provider']}]: ").strip() or config["provider"]
+    meta = providers.get(chosen)
+    config["provider"] = chosen
+
+    if not meta["speaks_directly"]:
+        existing = config.get(meta["config_key"])
+        prompt = (
+            f"API key [{cfg.redact(existing)}]: "
+            if existing
+            else f"API key (or leave blank to use ${meta['env_var']}): "
+        )
+        entered = input(prompt).strip()
+        if entered:
+            config[meta["config_key"]] = entered
+
+    voice = input(f"Voice [{config.get('voice') or 'default'}]: ").strip()
+    if voice:
+        config["voice"] = voice
+
+    cfg.save(config)
+    print(f"\nSaved to {cfg.config_path()} (mode 0600).")
+
+    if not meta["speaks_directly"] and not cfg.api_key(chosen, config):
+        print(
+            f"\nNo key stored and ${meta['env_var']} is unset — "
+            "sayit will use the offline system voice until one is available."
+        )
+    return 0
+
+
+def config_command(rest: List[str]) -> int:
+    action = rest[0] if rest else "list"
+    config: Dict[str, Any] = cfg.load()
+
+    if action == "path":
+        print(cfg.config_path())
+        return 0
+
+    if action == "list":
+        width = max(len(k) for k in config)
+        for key, value in config.items():
+            shown = cfg.redact(value) if key in cfg.SECRET_KEYS else value
+            print(f"{key:<{width}}  {shown}")
+        if not cfg.config_path().exists():
+            print("\n(no config file yet — these are defaults. Run `sayit init`.)")
+        return 0
+
+    if action == "get":
+        if len(rest) < 2:
+            raise SystemExit("sayit: usage: sayit config get <key>")
+        key = rest[1]
+        if key not in config:
+            raise SystemExit(f"sayit: no such key: {key}")
+        print(cfg.redact(config[key]) if key in cfg.SECRET_KEYS else config[key])
+        return 0
+
+    if action == "set":
+        if len(rest) < 3:
+            raise SystemExit("sayit: usage: sayit config set <key> <value>")
+        key, value = rest[1], " ".join(rest[2:])
+        if key == "provider":
+            providers.get(value)
+        config[key] = float(value) if key in {"speed", "rate"} else value
+        cfg.save(config)
+        shown = cfg.redact(value) if key in cfg.SECRET_KEYS else config[key]
+        print(f"{key} = {shown}")
+        return 0
+
+    raise SystemExit(f"sayit: unknown config command \"{action}\". Use: list, get, set, path")
+
+
+def voices_command(args: argparse.Namespace) -> int:
+    config = cfg.resolve(provider=args.provider)
+    provider_id = config["provider"]
+    listed = providers.voices(provider_id, cfg.api_key(provider_id, config))
+
+    if not listed:
+        print(f"No voices listed for provider \"{provider_id}\".")
+        return 0
+
+    width = max(len(name) for name, _, _ in listed)
+    for name, locale, note in listed:
+        print(f"{name:<{width}}  {locale:<8} {note}".rstrip())
+    return 0
+
+
+def warn(args: argparse.Namespace, message: str) -> None:
+    if not args.quiet:
+        print(f"sayit: {message}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

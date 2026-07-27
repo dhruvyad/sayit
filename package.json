@@ -1,0 +1,44 @@
+{
+  "name": "sayit",
+  "version": "0.1.0",
+  "description": "Speak text aloud from the terminal. Built for LLM agents to talk to you, with offline system TTS when no API key is configured.",
+  "type": "module",
+  "bin": {
+    "sayit": "bin/sayit.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "tts",
+    "text-to-speech",
+    "cli",
+    "speech",
+    "say",
+    "voice",
+    "agent",
+    "llm",
+    "openai",
+    "elevenlabs",
+    "notification"
+  ],
+  "license": "MIT",
+  "author": "Dhruv Yadav <dhruvyadav1806@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dhruvyad/sayit.git"
+  },
+  "homepage": "https://github.com/dhruvyad/sayit#readme",
+  "bugs": {
+    "url": "https://github.com/dhruvyad/sayit/issues"
+  }
+}

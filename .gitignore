@@ -1,0 +1,11 @@
+node_modules/
+*.tgz
+.DS_Store
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+build/
+*.egg-info/

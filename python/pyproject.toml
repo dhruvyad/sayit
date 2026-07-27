@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sayit"
+version = "0.1.0"
+description = "Speak text aloud from the terminal. Built for LLM agents to talk to you, with offline system TTS when no API key is configured."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Dhruv Yadav", email = "dhruvyadav1806@gmail.com" }]
+keywords = ["tts", "text-to-speech", "cli", "speech", "say", "voice", "agent", "llm"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: Microsoft :: Windows",
+  "Programming Language :: Python :: 3",
+  "Topic :: Multimedia :: Sound/Audio :: Speech",
+  "Topic :: Utilities",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/dhruvyad/sayit"
+Repository = "https://github.com/dhruvyad/sayit"
+Issues = "https://github.com/dhruvyad/sayit/issues"
+
+[project.scripts]
+sayit = "sayit.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sayit"]
