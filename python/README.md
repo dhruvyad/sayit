@@ -10,25 +10,20 @@ Works with no configuration at all — it falls back to your operating system's
 built-in voice, which is offline, free, and needs no API key. Configure a cloud
 provider when you want it to sound good.
 
-## Status: not published to PyPI
-
-The shipping build of saynow is [the npm package](https://www.npmjs.com/package/saynow).
-This Python port is a complete, working equivalent that lives in the repo but is
-deliberately unpublished — maintaining two implementations in lockstep is a cost
-worth paying only once someone actually needs the Python one.
-
-The name is available on PyPI, so it can be published at any time. Open an issue
-if you want it.
-
-## Install from source
+## Install
 
 ```bash
-git clone https://github.com/dhruvyad/saynow
-uv tool install ./saynow/python
+pip install saynow
+# or, for an isolated CLI on your PATH:
+uv tool install saynow
 ```
 
-No third-party dependencies — it uses only the standard library. Both builds
-read the same config file, so they are interchangeable on one machine.
+No third-party dependencies — it uses only the standard library.
+
+This is the Python distribution. There is an equivalent
+[npm package](https://www.npmjs.com/package/saynow) under the same name, and
+both read the same config file, so they are interchangeable on one machine.
+Install whichever suits the runtime you already have.
 
 ## Usage
 
