@@ -43,7 +43,9 @@ export async function showBubble({
   rate,
   from,
   document,
-  dismissMs = 5000,
+  // A question needs time to be read and answered, so it holds four times
+  // longer than a statement you only have to hear.
+  dismissMs = ask ? 20_000 : 5000,
   onStop,
   speech,
   audio,
@@ -278,6 +280,8 @@ function readJson(req) {
 /* ---- window shells ------------------------------------------------------ */
 
 function openWindow(url) {
+  // Tests need the server without putting a window on someone's screen.
+  if (process.env.SAYNOW_NO_WINDOW) return noWindow();
   return nativePanel(url) || browserWindow(url) || noWindow();
 }
 

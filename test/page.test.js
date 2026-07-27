@@ -22,7 +22,7 @@ assert.ok(SCRIPT, 'could not find the page script — did the markup change?');
  */
 function loadPage(state) {
   const { document, byId, search } = createDom({ markup: PAGE });
-  const calls = { fetched: [], audio: [], events: [] };
+  const calls = { fetched: [], audio: [], players: [], events: [] };
 
   const context = {
     window: {
@@ -39,6 +39,7 @@ function loadPage(state) {
     Audio: class {
       constructor(src) {
         calls.audio.push(src);
+        calls.players.push(this);
         this.src = src;
         this.paused = false;
         this.ended = false;
@@ -198,6 +199,87 @@ test('code blocks are never lit, because they are never spoken', () => {
   };
   walk(byId.get('transcript'), false);
   assert.deepEqual(inPre, [], 'wrapping code would desynchronise everything after it');
+});
+
+test('the countdown runs after a question, not only after a statement', () => {
+  // The page focuses the reply box itself on load, and holding() counted that
+  // as engagement — so with --ask the countdown never started, the bar never
+  // appeared, and the bubble sat there until the CLI gave up. It looked like
+  // the timer only worked without --ask, which is exactly what it did.
+  const { byId, calls } = loadPage({ ...PLAIN, ask: true, hasAudio: true });
+
+  const player = calls.players[0];
+  assert.ok(player, 'the page should be playing the audio itself');
+  player.handlers.ended();
+
+  const bar = byId.get('timer');
+  assert.equal(bar.style.transform, 'scaleX(0)', 'the bar must be counting down');
+  assert.match(bar.style.transition, /^transform \d+ms linear$/);
+});
+
+test('a question is given longer to answer than a statement takes to hear', () => {
+  const read = (state) => {
+    const { byId, calls } = loadPage({ ...state, hasAudio: true });
+    calls.players[0].handlers.ended();
+    return Number(/transform (\d+)ms/.exec(byId.get('timer').style.transition)?.[1]);
+  };
+
+  assert.ok(
+    read({ ...PLAIN, ask: true, dismissMs: 20000 }) >
+      read({ ...PLAIN, ask: false, dismissMs: 5000 }),
+    'five seconds is not long enough to read a question and type an answer',
+  );
+});
+
+test('hovering holds the bubble open, and leaving restarts the countdown', () => {
+  const { byId, calls } = loadPage({ ...PLAIN, ask: true, hasAudio: true });
+  calls.players[0].handlers.ended();
+
+  const bubble = byId.get('bubble');
+  const bar = byId.get('timer');
+
+  bubble.dispatch('mouseenter');
+  assert.equal(bar.style.opacity, '0', 'the bar should fade out while they are here');
+
+  bubble.dispatch('mouseleave');
+  assert.equal(bar.style.transform, 'scaleX(0)');
+  assert.equal(bar.style.opacity, '1', 'and come back when they leave');
+});
+
+test('the cursor landing in the box on its own does not hold the bubble open', () => {
+  // The page focuses the reply field itself, and WebKit may deliver that
+  // focus event whenever it likes. Treating focus as engagement is what
+  // killed the countdown for every --ask bubble.
+  const { byId, calls } = loadPage({ ...PLAIN, ask: true, hasAudio: true });
+  byId.get('field').dispatch('focus');
+  calls.players[0].handlers.ended();
+
+  assert.equal(byId.get('timer').style.transform, 'scaleX(0)', 'it must still count down');
+});
+
+test('reaching for the box does hold it open', () => {
+  const { byId, calls } = loadPage({ ...PLAIN, ask: true, hasAudio: true });
+  byId.get('field').dispatch('pointerdown');
+  calls.players[0].handlers.ended();
+
+  assert.notEqual(byId.get('timer').style.transform, 'scaleX(0)');
+});
+
+test('a reply in progress is never swallowed by the timer', () => {
+  const { byId, calls } = loadPage({ ...PLAIN, ask: true, hasAudio: true });
+  const field = byId.get('field');
+
+  field.value = 'not yet, wait';
+  field.dispatch('input');
+  calls.players[0].handlers.ended();
+
+  byId.get('bubble').dispatch('mouseenter');
+  byId.get('bubble').dispatch('mouseleave');
+  assert.notEqual(
+    byId.get('timer').style.transform,
+    'scaleX(0)',
+    'losing a half-written reply is worse than a bubble that overstays',
+  );
 });
 
 /**
