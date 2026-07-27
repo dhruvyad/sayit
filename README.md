@@ -120,14 +120,18 @@ A small macOS app for the things a flag is a clumsy way to set — picking a
 model from the live OpenRouter catalogue, storing keys, and browsing what you
 have already synthesised.
 
+On macOS, `npm install -g saynow` installs the app as well — there is no second
+command to run. It compiles during the install, so it needs the Xcode command
+line tools (`xcode-select --install`); without them the install skips it and
+tells you. To opt out, or to add it later:
+
 ```bash
-saynow app install     # builds Saynow.app and puts it in /Applications
+SAYNOW_NO_APP=1 npm install -g saynow    # command line tool only
+saynow app install                       # add the app any time
 ```
 
-It compiles from source on first run, so it needs the Xcode command line tools
-(`xcode-select --install`). It ships as source rather than a prebuilt binary
-because a prebuilt app needs a Developer ID and notarisation to run anywhere
-else.
+It ships as source rather than a prebuilt binary because a prebuilt app needs a
+Developer ID and notarisation to run on anyone else's machine.
 
 It is a separate process from the CLI and they meet only at
 `~/.config/saynow/config.json`, so either works without the other. Building it

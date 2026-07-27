@@ -50,8 +50,10 @@ List archived clips, newest first. \fBhistory open\fR [\fIn\fR] plays one,
 \fBhistory path\fR prints the directory, \fBhistory clear\fR deletes them all.
 .TP
 .B app install
-Build and install the macOS settings app. It compiles from source on demand and
-needs the Xcode command line tools.
+Build and install the macOS settings app. Installing saynow on macOS does this
+already; this is for adding it later, or after an install that skipped scripts.
+It compiles from source and needs the Xcode command line tools. Set
+\fBSAYNOW_NO_APP\fR to keep an install from doing it.
 .TP
 .B help
 Show the full help text.
@@ -187,6 +189,9 @@ the machine\-wide one.
 .TP
 .B SAYNOW_HISTORY_DIR
 Override where archived clips are written.
+.TP
+.B SAYNOW_NO_APP
+Set during installation to skip building the macOS settings app.
 .TP
 .BR OPENAI_API_KEY ", " ELEVENLABS_API_KEY ", " OPENROUTER_API_KEY
 Provider credentials. These take precedence over the config file.

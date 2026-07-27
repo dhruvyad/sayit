@@ -110,13 +110,18 @@ THE SETTINGS APP
   picking a model from the live catalogue with prices, storing keys, and
   browsing, playing and pricing what you have already synthesised.
 
+  Installing saynow on macOS installs the app too, so there is nothing else
+  to run. To opt out, install with SAYNOW_NO_APP=1 set; to add it later, or
+  after an install that skipped scripts:
+
     saynow app install     build it and put it in /Applications
 
-  It compiles from source on demand and needs the Xcode command line tools
-  (xcode-select --install). It ships as source rather than a binary because a
-  prebuilt app needs a Developer ID and notarisation to run on anyone else's
-  machine. It is a separate process from this tool and they meet only at the
-  config file, so either works without the other.
+  It compiles from source and needs the Xcode command line tools
+  (xcode-select --install); without them the install skips it and says so. It
+  ships as source rather than a binary because a prebuilt app needs a
+  Developer ID and notarisation to run on anyone else's machine. It is a
+  separate process from this tool and they meet only at the config file, so
+  either works without the other.
 
 THE BUBBLE
   Whenever saynow speaks it also shows a small bubble in the bottom-right
