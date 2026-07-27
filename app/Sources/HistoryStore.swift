@@ -130,7 +130,9 @@ final class HistoryStore: ObservableObject {
                 model: entry["model"] as? String,
                 voice: entry["voice"] as? String,
                 cost: entry["cost"] as? Double,
-                generationId: entry["generation_id"] as? String,
+                // Either spelling: older clips used a snake_case key.
+                generationId: entry["generationId"] as? String
+                    ?? entry["generation_id"] as? String,
                 text: entry["text"] as? String ?? ""
             )
         }

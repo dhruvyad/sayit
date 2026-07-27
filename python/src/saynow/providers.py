@@ -263,6 +263,9 @@ OPENROUTER_SPEECH_MODELS_URL = (
 # response_format.
 OPENROUTER_NEEDS_MP3 = {"minimax/speech-2.8-turbo", "minimax/speech-2.8-hd"}
 
+# Shorter than any real utterance; a WAV header alone is 44 bytes.
+MIN_AUDIO_BYTES = 512
+
 
 def openrouter_default_voice(model: str) -> Optional[str]:
     return catalog_default_voice(model)
@@ -343,6 +346,16 @@ def synthesize_openrouter(
                 raw = response.read()
                 content_type = response.headers.get("content-type", "")
                 generation_id = response.headers.get("x-generation-id")
+            # A 200 carrying no audio is a failure wearing a success: it
+            # would archive 44 bytes of nothing and "play" silence.
+            if len(raw) < MIN_AUDIO_BYTES:
+                raise SystemExit(
+                    f"saynow: {chosen_model} returned no audio ({len(raw)} bytes) "
+                    f'for voice "{chosen_voice}".\nThis is usually transient — try '
+                    f"again, or a different voice from: saynow voices -p openrouter "
+                    f"-m {chosen_model}"
+                )
+
             audio, ext = _identify(raw, content_type)
             return {
                 "audio": audio,

@@ -83,7 +83,8 @@ def record(
             "voice": voice,
             # Resolved lazily by `saynow history` so synthesis is never delayed
             # by a second round trip just to learn the price.
-            "generation_id": generation_id,
+            # camelCase to match the npm build: one index file, one key.
+            "generationId": generation_id,
             "cost": None,
             "text": text[:300] + "…" if len(text) > 300 else text,
         }
@@ -97,16 +98,21 @@ def record(
         return None
 
 
+def _generation_id(entry: Dict[str, Any]) -> Optional[str]:
+    """Accept either spelling: older clips were written with a snake_case key."""
+    return entry.get("generationId") or entry.get("generation_id")
+
+
 def resolve_costs(lookup) -> int:
     """Fill in prices for clips that have a generation id but no cost yet."""
     entries = read_index()
-    pending = [e for e in entries if e.get("generation_id") and e.get("cost") is None]
+    pending = [e for e in entries if _generation_id(e) and e.get("cost") is None]
     if not pending:
         return 0
 
     resolved = 0
     for entry in pending:
-        cost = lookup(entry["generation_id"])
+        cost = lookup(_generation_id(entry))
         if cost is not None:
             entry["cost"] = cost
             resolved += 1

@@ -97,13 +97,16 @@ function prune(entries, limit) {
  * Fill in prices for clips that have a generation id but no cost yet, then
  * persist. Returns how many were resolved.
  */
+/** Accept either spelling: older clips were written with a snake_case key. */
+const generationIdOf = (entry) => entry.generationId ?? entry.generation_id ?? null;
+
 export async function resolveCosts(lookup) {
   const entries = readIndex();
-  const pending = entries.filter((e) => e.generationId && e.cost == null);
+  const pending = entries.filter((e) => generationIdOf(e) && e.cost == null);
   if (!pending.length) return 0;
 
   const results = await Promise.all(
-    pending.map((entry) => lookup(entry.generationId).catch(() => null)),
+    pending.map((entry) => lookup(generationIdOf(entry)).catch(() => null)),
   );
 
   let resolved = 0;

@@ -17,6 +17,9 @@ const DEFAULT_MODEL = 'google/gemini-3.1-flash-tts-preview';
  */
 const NEEDS_MP3 = new Set(['minimax/speech-2.8-turbo', 'minimax/speech-2.8-hd']);
 
+/** Shorter than any real utterance; a WAV header alone is 44 bytes. */
+const MIN_AUDIO_BYTES = 512;
+
 // OpenAI's audio models emit 24 kHz mono 16-bit PCM, and so do the OpenRouter
 // speech models that return a bare stream with no container.
 const SAMPLE_RATE = 24000;
@@ -55,8 +58,21 @@ export async function synthesize(text, { apiKey, voice, model } = {}) {
 
   if (!res.ok) throw new Error(await describeError(res, chosenModel, chosenVoice));
 
+  const payload = Buffer.from(await res.arrayBuffer());
+
+  // A 200 carrying no audio is a failure wearing a success. Left unchecked it
+  // wraps zero samples in a WAV header, archives 44 bytes of nothing, and
+  // "plays" silence — the user hears no answer and sees no error.
+  if (payload.length < MIN_AUDIO_BYTES) {
+    throw new Error(
+      `${chosenModel} returned no audio (${payload.length} bytes) for voice "${chosenVoice}".\n` +
+        `This is usually transient — try again, or a different voice from: ` +
+        `saynow voices -p openrouter -m ${chosenModel}`,
+    );
+  }
+
   return {
-    ...identify(Buffer.from(await res.arrayBuffer()), res.headers.get('content-type')),
+    ...identify(payload, res.headers.get('content-type')),
     model: chosenModel,
     voice: chosenVoice,
     // Lets the caller look up what this actually cost, without delaying speech.
