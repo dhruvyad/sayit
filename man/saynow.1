@@ -1,4 +1,4 @@
-.TH SAYNOW 1 "2026-07-27" "saynow 0.3.0" "User Commands"
+.TH SAYNOW 1 "2026-07-27" "saynow 0.4.0" "User Commands"
 .SH NAME
 saynow \- speak text aloud from the terminal
 .SH SYNOPSIS
@@ -70,6 +70,15 @@ range 150 to 350.
 Playback speed multiplier, 0.25 to 4.0. Cloud providers only; \fBopenrouter\fR
 ignores it. Defaults to 1.
 .TP
+.B \-\-ask
+Add a reply box to the bubble and wait for an answer, which is printed to
+standard output. See
+.B THE BUBBLE
+below. Cannot be combined with \fB\-\-save\fR.
+.TP
+.B \-\-no\-ui
+Speak without showing the bubble at all.
+.TP
 .BI \-\-save " file"
 Write audio to \fIfile\fR instead of playing it, and print the absolute path.
 Not supported by the \fBsystem\fR provider. The format is mp3, or wav for
@@ -114,6 +123,33 @@ Concurrent
 .B saynow
 processes serialise through a lock file, so three calls produce three sentences
 rather than one muddle.
+.SH THE BUBBLE
+Whenever
+.B saynow
+speaks it also shows a small bubble in the bottom\-right corner carrying the
+transcript, lit word by word, with a stop button and a dismiss button. It fades
+out shortly after the audio ends, so a sentence you half\-heard is still
+readable. Pass \fB\-\-no\-ui\fR to suppress it.
+.PP
+On macOS the bubble is a floating panel: no Dock icon, no entry in the
+application switcher, and it does not take focus from the app you are using.
+Elsewhere it falls back to a Chromium application window, which looks the same
+but carries a title bar. With neither available,
+.B saynow
+simply speaks.
+.PP
+\fB\-\-ask\fR adds a reply box and waits. The reply is written to standard
+output, so a caller can read it directly:
+.PP
+.RS
+.EX
+answer=$(saynow --ask "Should I drop the old table?")
+.EE
+.RE
+.PP
+It waits indefinitely once you interact with it. If you do not, it fades out
+five seconds after the audio ends and exits 2, which lets a caller tell
+"they said no" apart from "nobody was there".
 .SH CONFIGURATION
 Settings live in \fI~/.config/saynow/config.json\fR, created with mode 0600.
 Precedence, from lowest to highest, is built\-in defaults, the config file,
@@ -151,6 +187,9 @@ Spoke successfully, or wrote the file when \fB\-\-save\fR was given.
 .B 1
 Usage error, unusable provider under \fB\-\-strict\fR, network or API failure,
 or no audio player found on the system.
+.TP
+.B 2
+\fB\-\-ask\fR was dismissed or timed out without a reply.
 .SH FILES
 .TP
 .I ~/.config/saynow/config.json

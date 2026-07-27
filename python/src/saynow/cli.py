@@ -48,6 +48,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-s", "--speed", type=float, help="speed 0.25-4.0 (cloud providers)")
     parser.add_argument("--save", metavar="FILE", help="write audio to a file instead of playing")
     parser.add_argument(
+        "--ask", action="store_true", help="show a reply bubble and wait (npm build only)"
+    )
+    parser.add_argument(
+        "--no-ui", action="store_true", help="speak without showing the bubble"
+    )
+    parser.add_argument(
         "--no-queue", action="store_true", help="speak immediately, overlapping in-flight speech"
     )
     parser.add_argument(
@@ -91,6 +97,8 @@ def read_stdin() -> str:
 
 def speak(text: str, args: argparse.Namespace) -> int:
     """Always make a sound: degrade to the offline voice rather than failing."""
+    if args.ask and args.save:
+        raise SystemExit("saynow: --ask and --save cannot be combined.")
     config = cfg.resolve(
         provider=args.provider, voice=args.voice, model=args.model, speed=args.speed
     )

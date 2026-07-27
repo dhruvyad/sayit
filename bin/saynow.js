@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
 import { speak } from '../src/speak.js';
+import { canShowBubble, showBubble } from '../src/bubble.js';
 import { get, providerIds, providers } from '../src/providers/index.js';
 import {
   CONFIG_PATH,
@@ -33,6 +34,8 @@ const OPTIONS = {
   rate: { type: 'string', short: 'r' },
   speed: { type: 'string', short: 's' },
   save: { type: 'string' },
+  ask: { type: 'boolean' },
+  'no-ui': { type: 'boolean' },
   'no-queue': { type: 'boolean' },
   strict: { type: 'boolean' },
   quiet: { type: 'boolean', short: 'q' },
@@ -65,6 +68,8 @@ async function main() {
     rate: values.rate ? Number(values.rate) : undefined,
     speed: values.speed ? Number(values.speed) : undefined,
     save: values.save,
+    ask: values.ask,
+    noUi: values['no-ui'],
     noQueue: values['no-queue'],
     strict: values.strict,
     quiet: values.quiet,
@@ -93,8 +98,7 @@ async function main() {
     fail('nothing to say. Pass text as an argument or pipe it on stdin.\n\nRun `saynow --help` for usage.');
   }
 
-  const result = await speak(text.trim(), flags);
-  if (result?.saved && !flags.quiet) console.log(result.saved);
+  return speakCommand(text.trim(), flags);
 }
 
 async function readStdin() {
@@ -209,6 +213,58 @@ async function voicesCommand(flags) {
   for (const v of list) {
     console.log(`${v.name.padEnd(width)}  ${v.locale.padEnd(8)} ${v.note}`.trimEnd());
   }
+}
+
+/**
+ * Speak the text, showing the bubble alongside unless asked not to.
+ *
+ * With --ask the bubble carries a reply box and we block on it, printing the
+ * answer to stdout. Without it the bubble is a transcript that fades out once
+ * the audio stops, so a missed sentence is still readable.
+ */
+async function speakCommand(text, flags) {
+  if (flags.ask && flags.save) fail('--ask and --save cannot be combined.');
+
+  // --save writes a file and plays nothing, so there is nothing to narrate.
+  const wantsUi = !flags.noUi && !flags.save;
+  const shell = wantsUi ? canShowBubble() : null;
+
+  if (!shell) {
+    if (wantsUi && flags.ask && !flags.quiet) {
+      process.stderr.write(
+        'saynow: no window shell available, so --ask can only speak. ' +
+          'Install a Chromium-based browser, or Xcode command line tools on macOS.\n',
+      );
+    }
+    const result = await speak(text, flags);
+    if (result?.saved && !flags.quiet) console.log(result.saved);
+    if (flags.ask) process.exitCode = 2;
+    return;
+  }
+
+  const stop = new AbortController();
+  const speech = speak(text, { ...flags, signal: stop.signal }).catch((err) => {
+    process.stderr.write(`saynow: ${err.message}\n`);
+  });
+
+  const answer = await showBubble({
+    text,
+    ask: Boolean(flags.ask),
+    rate: flags.rate,
+    speech,
+    onStop: () => stop.abort(),
+  });
+
+  stop.abort();
+  await speech;
+
+  if (!flags.ask) return;
+
+  if (answer.reason === 'reply' && answer.text) {
+    console.log(answer.text);
+    return;
+  }
+  process.exitCode = 2;
 }
 
 async function modelsCommand() {

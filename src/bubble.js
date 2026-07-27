@@ -1,0 +1,251 @@
+import { createHash } from 'node:crypto';
+import { spawn, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const PAGE = path.join(ROOT, 'ui', 'bubble.html');
+const SHELL_SOURCE = path.join(ROOT, 'shell', 'SaynowPanel.swift');
+
+const WIDTH = 420;
+const INITIAL_HEIGHT = 200;
+
+const CACHE_DIR =
+  process.env.SAYNOW_CACHE_DIR ||
+  (process.platform === 'darwin'
+    ? path.join(os.homedir(), 'Library', 'Caches', 'saynow')
+    : path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'), 'saynow'));
+
+/**
+ * Show the bubble and wait for the user.
+ *
+ * Resolves with {reason: 'reply', text} when they answer, or
+ * {reason: 'dismiss'} when it times out or they wave it away.
+ */
+export async function showBubble({
+  text,
+  ask = false,
+  rate,
+  wordOffsetsMs,
+  dismissMs = 5000,
+  onStop,
+  speech,
+  timeoutMs = 120_000,
+} = {}) {
+  const state = { text, ask, rate: rate || 175, wordOffsetsMs, dismissMs };
+  const page = renderPage(state);
+
+  let settle;
+  const answered = new Promise((resolve) => (settle = resolve));
+
+  // The word animation is only an estimate of pace. The dismiss countdown has
+  // to start when the audio genuinely stops, or the bubble can vanish
+  // mid-sentence on a slow voice.
+  const listeners = new Set();
+  const announceSpeechEnded = () => {
+    for (const res of listeners) res.write('event: ended\ndata: {}\n\n');
+  };
+
+  const server = http.createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/events') {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-store',
+        Connection: 'keep-alive',
+      });
+      res.write('retry: 1000\n\n');
+      listeners.add(res);
+      req.on('close', () => listeners.delete(res));
+      return;
+    }
+
+    if (req.method === 'GET') {
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+      });
+      res.end(page);
+      return;
+    }
+
+    readJson(req).then((body) => {
+      res.writeHead(204).end();
+      switch (req.url) {
+        case '/stop':
+          onStop?.();
+          break;
+        case '/reply':
+          settle({ reason: 'reply', text: String(body.text ?? '').trim() });
+          break;
+        case '/dismiss':
+          settle({ reason: 'dismiss' });
+          break;
+        case '/close':
+          settle({ reason: 'dismiss' });
+          break;
+      }
+    });
+  });
+
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const url = `http://127.0.0.1:${server.address().port}/`;
+
+  const window = openWindow(url);
+  const guard = setTimeout(() => settle({ reason: 'dismiss' }), timeoutMs);
+
+  // Resolves when the audio actually finishes, however long it really took.
+  Promise.resolve(speech)
+    .catch(() => {})
+    .then(announceSpeechEnded);
+
+  try {
+    return await answered;
+  } finally {
+    clearTimeout(guard);
+    for (const res of listeners) res.end();
+    window.close();
+    server.close();
+  }
+}
+
+function renderPage(state) {
+  const html = fs.readFileSync(PAGE, 'utf8');
+  const injected = `<script>window.__SAYNOW__ = ${JSON.stringify(state).replace(
+    /</g,
+    '\\u003c',
+  )};</script>`;
+  return html.replace('<!--SAYNOW_STATE-->', injected);
+}
+
+function readJson(req) {
+  return new Promise((resolve) => {
+    const chunks = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString() || '{}'));
+      } catch {
+        resolve({});
+      }
+    });
+    req.on('error', () => resolve({}));
+  });
+}
+
+/* ---- window shells ------------------------------------------------------ */
+
+function openWindow(url) {
+  return nativePanel(url) || browserWindow(url) || noWindow();
+}
+
+/**
+ * The preferred shell: a borderless transparent NSPanel. Compiled on first use
+ * and cached, keyed by a hash of the source so an upgrade rebuilds it.
+ */
+function nativePanel(url) {
+  if (process.platform !== 'darwin') return null;
+  if (!fs.existsSync(SHELL_SOURCE)) return null;
+  if (spawnSync('which', ['swiftc'], { stdio: 'ignore' }).status !== 0) return null;
+
+  const source = fs.readFileSync(SHELL_SOURCE);
+  const digest = createHash('sha256').update(source).digest('hex').slice(0, 12);
+  const binary = path.join(CACHE_DIR, `panel-${digest}`);
+
+  if (!fs.existsSync(binary)) {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+    const build = spawnSync('swiftc', ['-O', '-o', binary, SHELL_SOURCE], {
+      stdio: 'ignore',
+      timeout: 120_000,
+    });
+    if (build.status !== 0) return null;
+    // A stale build from an older version is just wasted disk; clear it out.
+    for (const entry of fs.readdirSync(CACHE_DIR)) {
+      if (entry.startsWith('panel-') && entry !== `panel-${digest}`) {
+        fs.rmSync(path.join(CACHE_DIR, entry), { force: true });
+      }
+    }
+  }
+
+  const child = spawn(binary, [url, String(WIDTH), String(INITIAL_HEIGHT)], {
+    stdio: ['pipe', 'ignore', 'ignore'],
+  });
+
+  // The panel exits when this pipe closes, so it can never outlive us.
+  return { close: () => child.kill() };
+}
+
+const BROWSERS = {
+  darwin: [
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  ],
+  linux: ['google-chrome', 'chromium', 'chromium-browser', 'microsoft-edge'],
+  win32: [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+  ],
+};
+
+/** Fallback shell: a Chromium app window. Same page, but the OS draws a frame. */
+function browserWindow(url) {
+  const candidates = BROWSERS[process.platform] || [];
+  const browser = candidates.find(
+    (c) =>
+      (c.includes('/') || c.includes('\\')
+        ? fs.existsSync(c)
+        : spawnSync('which', [c], { stdio: 'ignore' }).status === 0),
+  );
+  if (!browser) return null;
+
+  const { width, height } = screenSize();
+  const child = spawn(
+    browser,
+    [
+      `--app=${url}`,
+      `--window-size=${WIDTH},${INITIAL_HEIGHT + 40}`,
+      `--window-position=${Math.max(0, width - WIDTH - 24)},${Math.max(0, height - INITIAL_HEIGHT - 120)}`,
+      `--user-data-dir=${path.join(CACHE_DIR, 'browser-profile')}`,
+      '--no-first-run',
+      '--no-default-browser-check',
+    ],
+    { stdio: 'ignore', detached: false },
+  );
+
+  return { close: () => child.kill() };
+}
+
+function screenSize() {
+  if (process.platform === 'darwin') {
+    const out = spawnSync(
+      'osascript',
+      ['-e', 'tell application "Finder" to get bounds of window of desktop'],
+      { encoding: 'utf8' },
+    );
+    const parts = (out.stdout || '').trim().split(', ').map(Number);
+    if (parts.length === 4 && parts[2] > 0) return { width: parts[2], height: parts[3] };
+  }
+  return { width: 1440, height: 900 };
+}
+
+/** No shell available — speak-only, so --ask degrades to a plain announcement. */
+function noWindow() {
+  return { close: () => {} };
+}
+
+export function canShowBubble() {
+  if (process.platform === 'darwin' && spawnSync('which', ['swiftc'], { stdio: 'ignore' }).status === 0) {
+    return 'panel';
+  }
+  const candidates = BROWSERS[process.platform] || [];
+  const found = candidates.some((c) =>
+    c.includes('/') || c.includes('\\')
+      ? fs.existsSync(c)
+      : spawnSync('which', [c], { stdio: 'ignore' }).status === 0,
+  );
+  return found ? 'browser' : null;
+}

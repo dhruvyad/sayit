@@ -42,7 +42,7 @@ export function findPlayer() {
   return candidates.find((p) => exists(p.cmd)) || null;
 }
 
-export function play(file) {
+export function play(file, { signal } = {}) {
   const player = findPlayer();
   if (!player) {
     const tried = (PLAYERS[process.platform] || []).map((p) => p.cmd).join(', ');
@@ -52,11 +52,19 @@ export function play(file) {
     );
   }
 
+  if (signal?.aborted) return Promise.resolve();
+
   return new Promise((resolve, reject) => {
-    const child = spawn(player.cmd, player.args(file), { stdio: 'ignore' });
-    child.on('error', reject);
-    child.on('close', (code) =>
-      code === 0
+    const child = spawn(player.cmd, player.args(file), { stdio: 'ignore', signal });
+
+    child.on('error', (err) => {
+      // Aborting is how the stop button works, not a failure.
+      if (err.name === 'AbortError') resolve();
+      else reject(err);
+    });
+
+    child.on('close', (code, sig) =>
+      code === 0 || signal?.aborted || sig
         ? resolve()
         : reject(new Error(`${player.cmd} exited with code ${code}`)),
     );

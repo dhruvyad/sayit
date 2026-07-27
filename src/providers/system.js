@@ -33,7 +33,7 @@ function backend() {
   }
 }
 
-export async function speak(text, { voice, rate, save } = {}) {
+export async function speak(text, { voice, rate, save, signal } = {}) {
   if (save) {
     throw new Error(
       '--save is not supported by the system provider. Configure openai or elevenlabs to write audio files.',
@@ -48,16 +48,20 @@ export async function speak(text, { voice, rate, save } = {}) {
     const escaped = text.replace(/'/g, "''");
     const rateExpr = rate ? `$s.Rate = ${Math.max(-10, Math.min(10, rate))};` : '';
     const voiceExpr = voice ? `$s.SelectVoice('${voice.replace(/'/g, "''")}');` : '';
-    return run('powershell', [
+    return run(
+      'powershell',
+      [
       '-NoProfile',
       '-Command',
       `Add-Type -AssemblyName System.Speech;` +
         `$s = New-Object System.Speech.Synthesis.SpeechSynthesizer;` +
         `${voiceExpr}${rateExpr}$s.Speak('${escaped}')`,
-    ]);
+      ],
+      signal,
+    );
   }
 
-  return run(be.cmd, [...be.args({ voice, rate }), '--', text]);
+  return run(be.cmd, [...be.args({ voice, rate }), '--', text], signal);
 }
 
 export function voices() {
@@ -93,10 +97,18 @@ export function voices() {
   }
 }
 
-function run(cmd, args) {
+function run(cmd, args, signal) {
+  if (signal?.aborted) return Promise.resolve();
+
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: 'ignore' });
+    const child = spawn(cmd, args, { stdio: 'ignore', signal });
+
     child.on('error', (err) => {
+      // Aborting is how the stop button works, not a failure.
+      if (err.name === 'AbortError') {
+        resolve();
+        return;
+      }
       if (err.code === 'ENOENT') {
         reject(
           new Error(
@@ -108,8 +120,11 @@ function run(cmd, args) {
       }
       reject(err);
     });
-    child.on('close', (code) =>
-      code === 0 ? resolve() : reject(new Error(`${cmd} exited with code ${code}`)),
+
+    child.on('close', (code, sig) =>
+      code === 0 || signal?.aborted || sig
+        ? resolve()
+        : reject(new Error(`${cmd} exited with code ${code}`)),
     );
   });
 }

@@ -41,7 +41,12 @@ export async function speak(text, flags = {}) {
 
   if (provider.speaksDirectly) {
     await withQueue(flags, () =>
-      provider.speak(text, { voice: config.voice, rate: config.rate, save: flags.save }),
+      provider.speak(text, {
+        voice: config.voice,
+        rate: config.rate,
+        save: flags.save,
+        signal: flags.signal,
+      }),
     );
     return {};
   }
@@ -61,7 +66,7 @@ export async function speak(text, flags = {}) {
   const tmp = path.join(os.tmpdir(), `saynow-${process.pid}-${Date.now()}.${ext}`);
   fs.writeFileSync(tmp, audio, { mode: 0o600 });
   try {
-    await withQueue(flags, () => play(tmp));
+    await withQueue(flags, () => play(tmp, { signal: flags.signal }));
   } finally {
     fs.rmSync(tmp, { force: true });
   }

@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>saynow</title>
+    <style>
+      :root {
+        --bg: #0a0a0a;
+        --edge: rgba(255, 255, 255, 0.09);
+        --text: #f5f5f5;
+        --muted: rgba(245, 245, 245, 0.42);
+        --field: rgba(255, 255, 255, 0.055);
+        --field-focus: rgba(255, 255, 255, 0.085);
+        --radius: 18px;
+        --ease: cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html,
+      body {
+        height: 100%;
+        background: transparent;
+        overflow: hidden;
+        -webkit-font-smoothing: antialiased;
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Inter,
+          system-ui, sans-serif;
+      }
+
+      /* Standalone preview only: the native panel is already transparent and
+         sized, so this padding is a no-op there. */
+      body {
+        display: flex;
+        align-items: flex-end;
+        justify-content: flex-end;
+        padding: 0;
+      }
+
+      body.preview {
+        padding: 24px;
+        background:
+          radial-gradient(1200px 600px at 80% 90%, #1c1c1e 0%, #0f0f10 55%, #09090a 100%);
+      }
+
+      .bubble {
+        position: relative;
+        width: 100%;
+        max-width: 400px;
+        background: var(--bg);
+        border: 1px solid var(--edge);
+        border-radius: var(--radius);
+        padding: 16px 16px 14px;
+        color: var(--text);
+        box-shadow:
+          0 1px 0 0 rgba(255, 255, 255, 0.05) inset,
+          0 12px 32px -8px rgba(0, 0, 0, 0.7),
+          0 2px 8px -2px rgba(0, 0, 0, 0.5);
+        opacity: 0;
+        transform: translateY(10px) scale(0.985);
+        animation: enter 0.42s var(--ease) forwards;
+        overflow: hidden;
+      }
+
+      body.preview .bubble {
+        backdrop-filter: blur(20px) saturate(140%);
+        background: rgba(10, 10, 10, 0.86);
+      }
+
+      @keyframes enter {
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      .bubble.leaving {
+        animation: leave 0.26s var(--ease) forwards;
+      }
+
+      @keyframes leave {
+        to {
+          opacity: 0;
+          transform: translateY(6px) scale(0.985);
+        }
+      }
+
+      /* ---- header ------------------------------------------------------ */
+
+      .head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 11px;
+      }
+
+      .mark {
+        display: flex;
+        align-items: center;
+        gap: 2.5px;
+        height: 14px;
+      }
+
+      .mark i {
+        display: block;
+        width: 2.5px;
+        height: 14px;
+        border-radius: 1.5px;
+        background: var(--text);
+        /* Scale about the centre so the bar breathes symmetrically, the way a
+           waveform does, rather than growing out of the baseline. */
+        transform-origin: center;
+        transform: scaleY(0.22);
+        animation-name: wave;
+        animation-iteration-count: infinite;
+        /* ease-in-out spends time at the extremes, which reads as a swell.
+           A snappy ease reads as a flicker at this size. */
+        animation-timing-function: ease-in-out;
+        will-change: transform;
+      }
+
+      /* Slow and non-harmonic. One swell per bar per ~3s means roughly one
+         direction change a second, which reads as breathing. The earlier
+         version packed six reversals into a second, which reads as flicker. */
+      .mark i:nth-child(1) { animation-duration: 3.10s; animation-delay: -2.40s; opacity: 0.45; }
+      .mark i:nth-child(2) { animation-duration: 2.30s; animation-delay: -0.90s; opacity: 0.70; }
+      .mark i:nth-child(3) { animation-duration: 2.70s; animation-delay: -0.10s; opacity: 0.95; }
+      .mark i:nth-child(4) { animation-duration: 2.50s; animation-delay: -1.70s; opacity: 0.70; }
+      .mark i:nth-child(5) { animation-duration: 3.40s; animation-delay: -2.90s; opacity: 0.45; }
+
+      /* A single gentle swell per cycle — no intermediate reversals. */
+      @keyframes wave {
+        0%,
+        100% { transform: scaleY(0.34); }
+        50%  { transform: scaleY(0.92); }
+      }
+
+      /* Settle to a flat, quiet line once the voice stops. */
+      .bubble.done .mark i {
+        animation: none;
+        transform: scaleY(0.16);
+        opacity: 0.3;
+        transition:
+          transform 0.5s var(--ease),
+          opacity 0.5s var(--ease);
+      }
+
+      .label {
+        font-size: 11.5px;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--muted);
+        flex: 1;
+      }
+
+      .stop {
+        display: grid;
+        place-items: center;
+        width: 22px;
+        height: 22px;
+        border: none;
+        border-radius: 50%;
+        background: var(--field);
+        color: var(--text);
+        cursor: pointer;
+        transition: background 0.16s ease, opacity 0.16s ease, transform 0.16s ease;
+        flex-shrink: 0;
+      }
+
+      .stop:hover { background: rgba(255, 255, 255, 0.13); }
+      .stop:active { transform: scale(0.92); }
+
+      .stop svg { width: 8px; height: 8px; fill: currentColor; }
+
+      /* Stop is only meaningful while audio is playing; dismiss always is. */
+      .bubble.done .stop:not(.close) {
+        opacity: 0;
+        pointer-events: none;
+        width: 0;
+        margin-left: -7px;
+        transition: opacity 0.2s ease, width 0.24s var(--ease), margin 0.24s var(--ease);
+      }
+
+      .close svg.x {
+        width: 11px;
+        height: 11px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.6;
+        stroke-linecap: round;
+      }
+
+      /* ---- transcript --------------------------------------------------- */
+
+      .transcript {
+        font-size: 14.5px;
+        line-height: 1.5;
+        letter-spacing: -0.003em;
+        max-height: 168px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-width: none;
+      }
+
+      .transcript::-webkit-scrollbar { display: none; }
+
+      .transcript w {
+        opacity: 0.26;
+        transition: opacity 0.34s var(--ease);
+      }
+
+      .transcript w.said { opacity: 1; }
+
+      /* ---- reply -------------------------------------------------------- */
+
+      .reply {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin-top: 13px;
+      }
+
+      .reply.hidden { display: none; }
+
+      .field {
+        flex: 1;
+        min-width: 0;
+        height: 34px;
+        padding: 0 12px;
+        border: 1px solid transparent;
+        border-radius: 10px;
+        background: var(--field);
+        color: var(--text);
+        font: inherit;
+        font-size: 13.5px;
+        outline: none;
+        transition: background 0.16s ease, border-color 0.16s ease;
+      }
+
+      .field::placeholder { color: rgba(245, 245, 245, 0.32); }
+
+      .field:focus {
+        background: var(--field-focus);
+        border-color: rgba(255, 255, 255, 0.14);
+      }
+
+      .send {
+        display: grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border: none;
+        border-radius: 10px;
+        background: var(--text);
+        color: #0a0a0a;
+        cursor: pointer;
+        opacity: 0.28;
+        pointer-events: none;
+        transition: opacity 0.16s ease, transform 0.16s ease;
+        flex-shrink: 0;
+      }
+
+      .send.ready { opacity: 1; pointer-events: auto; }
+      .send:active { transform: scale(0.94); }
+      .send svg { width: 14px; height: 14px; stroke: currentColor; fill: none;
+                  stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+
+      /* ---- dismiss countdown -------------------------------------------- */
+
+      .timer {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 1.5px;
+        background: rgba(255, 255, 255, 0.22);
+        transform-origin: left;
+        transform: scaleX(1);
+      }
+
+      .timer.running {
+        transition: transform linear;
+      }
+
+      .timer.cancelled { opacity: 0; transition: opacity 0.2s ease; }
+
+      .sent {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 13px;
+        height: 34px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .sent.hidden { display: none; }
+
+      .sent svg { width: 13px; height: 13px; stroke: currentColor; fill: none;
+                  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+      /* Surgical, not a blanket reset. The usual `* { animation-duration:
+         0.01ms }` trick leaves iteration-count at infinite, which turns any
+         looping animation into a 100,000-per-second strobe — the opposite of
+         what the user asked for. It also stamps on the dismiss countdown,
+         whose duration is set from script. */
+      @media (prefers-reduced-motion: reduce) {
+        .bubble {
+          animation: none;
+          opacity: 1;
+          transform: none;
+        }
+
+        .bubble.leaving {
+          animation: none;
+          opacity: 0;
+          transition: opacity 0.2s linear;
+        }
+
+        /* Keep signalling "speaking", but breathe with opacity rather than
+           motion — reduce-motion asks us to drop movement, not all feedback.
+           Heights stay varied and slightly asymmetric so it still reads as a
+           waveform rather than a flat comb. */
+        .mark i {
+          animation-name: breathe;
+        }
+
+        .mark i:nth-child(1) { transform: scaleY(0.38); }
+        .mark i:nth-child(2) { transform: scaleY(0.74); }
+        .mark i:nth-child(3) { transform: scaleY(1);    }
+        .mark i:nth-child(4) { transform: scaleY(0.62); }
+        .mark i:nth-child(5) { transform: scaleY(0.44); }
+
+        /* Dim on finish, but keep the silhouette. */
+        .bubble.done .mark i {
+          animation: none;
+          opacity: 0.3;
+        }
+
+        .send:active,
+        .stop:active {
+          transform: none;
+        }
+      }
+
+      @keyframes breathe {
+        0%,
+        100% { opacity: 0.28; }
+        50%  { opacity: 0.95; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="bubble" id="bubble">
+      <div class="head">
+        <div class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="label" id="label">saynow</div>
+        <button class="stop" id="stop" title="Stop speaking" aria-label="Stop speaking">
+          <svg viewBox="0 0 8 8"><rect width="8" height="8" rx="1.5" /></svg>
+        </button>
+        <button class="stop close" id="close" title="Dismiss (esc)" aria-label="Dismiss">
+          <svg viewBox="0 0 12 12" class="x"><path d="M3 3l6 6M9 3l-6 6" /></svg>
+        </button>
+      </div>
+
+      <div class="transcript" id="transcript"></div>
+
+      <div class="reply hidden" id="reply">
+        <input
+          class="field"
+          id="field"
+          type="text"
+          placeholder="Reply…"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button class="send" id="send" aria-label="Send reply">
+          <svg viewBox="0 0 24 24"><path d="M5 12h13M12 5l7 7-7 7" /></svg>
+        </button>
+      </div>
+
+      <div class="sent hidden" id="sentNote">
+        <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5" /></svg>
+        <span>Sent</span>
+      </div>
+
+      <div class="timer" id="timer"></div>
+    </div>
+
+    <!--SAYNOW_STATE-->
+    <script>
+      const DEMO = {
+        text: 'Hey, saynow agent here. The migration finished and moved twelve hundred rows. Want me to drop the old table now?',
+        ask: true,
+        rate: 175,
+        dismissMs: 5000,
+      };
+
+      const state = window.__SAYNOW__ || (document.body.classList.add('preview'), DEMO);
+
+      const el = {
+        bubble: document.getElementById('bubble'),
+        transcript: document.getElementById('transcript'),
+        reply: document.getElementById('reply'),
+        field: document.getElementById('field'),
+        send: document.getElementById('send'),
+        stop: document.getElementById('stop'),
+        close: document.getElementById('close'),
+        timer: document.getElementById('timer'),
+        sent: document.getElementById('sentNote'),
+        label: document.getElementById('label'),
+      };
+
+      /* ---- transcript reveal --------------------------------------------- */
+
+      const words = state.text.split(/\s+/).filter(Boolean);
+      const nodes = words.map((word, i) => {
+        const w = document.createElement('w');
+        w.textContent = word;
+        el.transcript.append(w, i < words.length - 1 ? ' ' : '');
+        return w;
+      });
+
+      // Server-supplied per-word offsets when a provider gives real timings;
+      // otherwise pace off the speaking rate, which the system voice honours.
+      const offsets =
+        state.wordOffsetsMs ||
+        words.map((_, i) => (i * 60000) / (state.rate || 175));
+
+      let revealed = 0;
+      const timers = [];
+
+      offsets.forEach((at, i) => {
+        timers.push(
+          setTimeout(() => {
+            nodes[i].classList.add('said');
+            revealed = i + 1;
+            nodes[i].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            if (revealed === words.length) finishSpeaking();
+          }, at),
+        );
+      });
+
+      // The reveal animation only estimates pace, so it never starts the
+      // dismiss countdown on its own — the CLI reports when audio truly ends.
+      let audioEnded = !window.__SAYNOW__; // standalone preview has no audio
+      let revealFinished = false;
+
+      function finishSpeaking() {
+        revealFinished = true;
+        maybeSettle();
+      }
+
+      function maybeSettle() {
+        if (!revealFinished || !audioEnded) return;
+        el.bubble.classList.add('done');
+        if (state.ask) startDismissTimer();
+        else dismissAfter(900);
+      }
+
+      if (window.__SAYNOW__) {
+        const events = new EventSource('/events');
+        events.addEventListener('ended', () => {
+          audioEnded = true;
+          // Audio finished before the estimate caught up: snap the text to done.
+          if (!revealFinished) revealAllNow();
+          else maybeSettle();
+        });
+      }
+
+      function revealAllNow() {
+        timers.forEach(clearTimeout);
+        nodes.forEach((n) => n.classList.add('said'));
+        finishSpeaking();
+      }
+
+      /* ---- dismiss countdown --------------------------------------------- */
+
+      let dismissTimer = null;
+      let engaged = false;
+
+      function startDismissTimer() {
+        if (engaged) return;
+        const ms = state.dismissMs ?? 5000;
+        el.timer.classList.add('running');
+        el.timer.style.transitionDuration = ms + 'ms';
+        requestAnimationFrame(() => (el.timer.style.transform = 'scaleX(0)'));
+        dismissTimer = setTimeout(() => close('dismiss'), ms);
+      }
+
+      function engage() {
+        if (engaged) return;
+        engaged = true;
+        clearTimeout(dismissTimer);
+        el.timer.classList.add('cancelled');
+      }
+
+      function dismissAfter(ms) {
+        dismissTimer = setTimeout(() => close('dismiss'), ms);
+      }
+
+      /* ---- talking to the CLI -------------------------------------------- */
+
+      const post = (path, body) =>
+        fetch(path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body || {}),
+        }).catch(() => {});
+
+      function close(reason, payload) {
+        el.bubble.classList.add('leaving');
+        post('/' + reason, payload);
+        setTimeout(() => post('/close'), 260);
+      }
+
+      function submit() {
+        const text = el.field.value.trim();
+        if (!text) return;
+        engage();
+        el.reply.classList.add('hidden');
+        el.sent.classList.remove('hidden');
+        el.label.textContent = 'saynow';
+        setTimeout(() => close('reply', { text }), 420);
+      }
+
+      /* ---- wiring --------------------------------------------------------- */
+
+      if (state.ask) el.reply.classList.remove('hidden');
+
+      el.field.addEventListener('input', () => {
+        el.send.classList.toggle('ready', el.field.value.trim().length > 0);
+        engage();
+      });
+
+      el.field.addEventListener('focus', engage);
+      el.send.addEventListener('click', submit);
+
+      el.field.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') submit();
+        if (e.key === 'Escape') close('dismiss');
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') close('dismiss');
+      });
+
+      el.close.addEventListener('click', () => close('dismiss'));
+
+      el.bubble.addEventListener('mouseenter', engage);
+
+      el.stop.addEventListener('click', () => {
+        post('/stop');
+        engage();
+        audioEnded = true; // pressing stop ends the audio by definition
+        revealAllNow();
+        el.field.focus();
+      });
+
+      if (state.ask) setTimeout(() => el.field.focus({ preventScroll: true }), 480);
+
+      /* ---- tell the native shell how tall we are -------------------------- */
+
+      // Only present inside WKWebView; the browser fallback sizes its own window.
+      const sizeChannel = window.webkit?.messageHandlers?.size;
+
+      if (sizeChannel) {
+        // offsetHeight is the laid-out height. getBoundingClientRect would
+        // include the entrance scale transform and report a size that is wrong
+        // for the first few frames.
+        const report = () =>
+          sizeChannel.postMessage({
+            width: el.bubble.offsetWidth,
+            height: el.bubble.offsetHeight,
+          });
+        new ResizeObserver(report).observe(el.bubble);
+        report();
+      }
+    </script>
+  </body>
+</html>

@@ -31,6 +31,10 @@ OPTIONS
                          only. Typical range 150-350. Default: OS default.
   -s, --speed <n>        Playback speed multiplier, 0.25 to 4.0. Cloud
                          providers only; openrouter ignores it. Default: 1.
+      --ask              Add a reply box to the bubble and wait for an answer,
+                         which is printed to stdout. See ASKING below. Cannot
+                         be combined with --save.
+      --no-ui            Speak without showing the bubble at all.
       --save <file>      Write audio to <file> instead of playing it, and
                          print the absolute path. Not supported by the system
                          provider. Format is mp3, or wav for openrouter.
@@ -93,10 +97,34 @@ BEHAVIOUR
   Literals   To speak a word that is also a command name, pipe it instead:
              echo "config" | saynow
 
+THE BUBBLE
+  Whenever saynow speaks it also shows a small bubble in the bottom-right
+  corner carrying the transcript, lit word by word, with a stop button and a
+  dismiss button. It fades out shortly after the audio ends, so a sentence you
+  half-heard is still readable. Pass --no-ui to suppress it, or --quiet to
+  keep it while silencing stderr.
+
+  On macOS it is a floating panel: no dock icon, no entry in the app switcher,
+  and it does not steal focus from what you are doing. Elsewhere it falls back
+  to a Chromium app window, which looks the same but has a title bar. With
+  neither available, saynow simply speaks.
+
+ASKING
+  saynow --ask "question" adds a reply box to that bubble and waits.
+
+  The reply is written to stdout, so a caller can read it directly:
+
+    answer=$(saynow --ask "Should I drop the old table?")
+
+  It waits indefinitely once you interact with it. If you do not, it fades out
+  five seconds after the audio ends and exits 2, which lets a caller tell
+  "they said no" apart from "nobody was there".
+
 EXIT CODES
-  0   spoke successfully, or wrote the file when --save was given
+  0   spoke successfully, wrote the file when --save was given, or got a reply
   1   usage error, unusable provider under --strict, network or API failure,
       or no audio player found on the system
+  2   --ask was dismissed or timed out without a reply
 
 LIMITATIONS
   openrouter has no dedicated speech endpoint. saynow drives an audio-capable
@@ -105,6 +133,10 @@ LIMITATIONS
   reproduction matters.
   The system provider cannot write files, so it rejects --save.
   Windows support is best-effort and less tested than macOS and Linux.
+  --ask needs the npm build. The pip build speaks the text and then exits 2,
+  because the bubble is not yet ported to it.
+  The transcript is lit at an estimated pace rather than in true sync with
+  the audio, so the highlight can drift on unusually long or short text.
 
 EXAMPLES
   saynow "the build finished"
