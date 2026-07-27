@@ -627,26 +627,43 @@
       /* ---- dismiss countdown --------------------------------------------- */
 
       let dismissTimer = null;
-      let engaged = false;
 
-      function startDismissTimer() {
-        if (engaged) return;
-        const ms = state.dismissMs ?? 5000;
+      /**
+       * The bubble stays for as long as you are with it.
+       *
+       * Hovering, scrolling or focusing holds it open; moving away starts the
+       * countdown again. Once you have typed anything it never auto-dismisses,
+       * because losing a half-written reply is worse than a bubble that
+       * outstays its welcome.
+       */
+      let hovering = false;
+      let committed = false;
+
+      const holding = () =>
+        hovering || committed || document.activeElement === el.field;
+
+      function startDismissTimer(ms = state.dismissMs ?? 5000) {
+        clearTimeout(dismissTimer);
+        if (holding()) return;
+
+        el.timer.classList.remove('cancelled');
         el.timer.classList.add('running');
         el.timer.style.transitionDuration = ms + 'ms';
+        el.timer.style.transform = 'scaleX(1)';
         requestAnimationFrame(() => (el.timer.style.transform = 'scaleX(0)'));
         dismissTimer = setTimeout(() => close('dismiss'), ms);
       }
 
-      function engage() {
-        if (engaged) return;
-        engaged = true;
+      /** Hold it open. Anything typed makes that permanent. */
+      function engage({ permanent = false } = {}) {
+        if (permanent) committed = true;
         clearTimeout(dismissTimer);
         el.timer.classList.add('cancelled');
       }
 
+      /** Speech ended, or the pointer left: start counting down again. */
       function dismissAfter(ms) {
-        dismissTimer = setTimeout(() => close('dismiss'), ms);
+        startDismissTimer(ms);
       }
 
       /* ---- talking to the CLI -------------------------------------------- */
@@ -668,7 +685,7 @@
       function submit() {
         const text = el.field.value.trim();
         if (!text) return;
-        engage();
+        engage({ permanent: true });
         el.reply.classList.add('hidden');
         el.sent.classList.remove('hidden');
         showSender(state.from);
@@ -705,11 +722,13 @@
       if (state.ask) el.reply.classList.remove('hidden');
 
       el.field.addEventListener('input', () => {
-        el.send.classList.toggle('ready', el.field.value.trim().length > 0);
-        engage();
+        const typed = el.field.value.trim().length > 0;
+        el.send.classList.toggle('ready', typed);
+        // A half-written reply must never be swallowed by a timer.
+        engage({ permanent: typed });
       });
 
-      el.field.addEventListener('focus', engage);
+      el.field.addEventListener('focus', () => engage());
       el.send.addEventListener('click', submit);
 
       el.field.addEventListener('keydown', (e) => {
@@ -723,12 +742,25 @@
 
       el.close.addEventListener('click', () => close('dismiss'));
 
-      el.bubble.addEventListener('mouseenter', engage);
+      el.bubble.addEventListener('mouseenter', () => {
+        hovering = true;
+        engage();
+      });
+
+      el.bubble.addEventListener('mouseleave', () => {
+        hovering = false;
+        // Only resume once speech is over; mid-sentence there is nothing to
+        // count down yet.
+        if (audioEnded) dismissAfter(state.ask ? undefined : 1200);
+      });
+
+      // Reading counts as being here, even without moving the pointer.
+      el.transcript.addEventListener('scroll', () => engage());
 
       el.stop.addEventListener('click', () => {
         player?.pause();
         post('/stop');
-        engage();
+        engage({ permanent: true });
         audioEnded = true; // pressing stop ends the audio by definition
         revealAllNow();
         el.field.focus();
