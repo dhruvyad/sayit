@@ -2,10 +2,13 @@
 #
 # One-time setup before the first run:
 #
-#   npm    Create a granular access token at
-#          https://www.npmjs.com/settings/dhruvy/tokens with type "Automation"
-#          (that type is exempt from the 2FA challenge) and read/write access
-#          to the saynow package. Save it as the repository secret NPM_TOKEN.
+#   npm    Add a trusted publisher at
+#          https://www.npmjs.com/package/saynow/access
+#          provider: GitHub Actions, organization: dhruvyad, repository: saynow,
+#          workflow: release.yml, environment: (leave blank).
+#          No token is stored — the job authenticates over OIDC. npm generates
+#          provenance automatically for trusted publishes from a public repo,
+#          so --provenance is not passed explicitly.
 #
 #   PyPI   Add a trusted publisher at
 #          https://pypi.org/manage/project/saynow/settings/publishing/
@@ -65,17 +68,22 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # required for provenance attestation
+      id-token: write # required for OIDC trusted publishing
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           registry-url: https://registry.npmjs.org
+      - name: Upgrade npm
+        # Trusted publishing needs npm >= 11.5.1; Node 22 still bundles npm 10.
+        run: |
+          npm install -g npm@latest
+          npm --version
       - name: Publish
-        run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # No NODE_AUTH_TOKEN: authentication is OIDC, and provenance is
+        # generated automatically for trusted publishes from a public repo.
+        run: npm publish --access public
 
   pypi:
     name: publish to PyPI
