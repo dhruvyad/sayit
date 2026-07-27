@@ -563,7 +563,15 @@
         el.field.focus();
       });
 
-      if (state.ask) setTimeout(() => el.field.focus({ preventScroll: true }), 480);
+      // Focus immediately, not after the entrance animation. Any delay here
+      // silently swallows the first characters of a fast reply.
+      if (state.ask) {
+        el.field.focus({ preventScroll: true });
+        // The panel takes key status a beat after the page loads, so claim
+        // focus again once it does rather than waiting a fixed interval.
+        window.addEventListener('focus', () => el.field.focus({ preventScroll: true }));
+        requestAnimationFrame(() => el.field.focus({ preventScroll: true }));
+      }
 
       /* ---- tell the native shell how tall we are -------------------------- */
 
