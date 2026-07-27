@@ -71,8 +71,9 @@ Use it when the answer is a table, a chart or a diff — anything worse describe
 than shown. Relative image paths resolve against the document's own directory,
 so a folder containing the report and its charts works as-is.
 
-The bubble holds open while they hover, scroll or type, so a document is read
-at their pace rather than a timer's.
+The bubble holds open for as long as their pointer is on it or they are typing
+in it, so a document is read at their pace rather than a timer's. Left alone it
+goes five seconds after the voice stops.
 
 ## Choosing a voice
 
