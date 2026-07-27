@@ -6,7 +6,7 @@ import readline from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
-import { speak } from '../src/speak.js';
+import { plan, speak } from '../src/speak.js';
 import { canShowBubble, showBubble } from '../src/bubble.js';
 import { acquireLock } from '../src/queue.js';
 import * as history from '../src/history.js';
@@ -259,6 +259,29 @@ async function speakCommand(text, flags) {
   }
 
   const stop = new AbortController();
+
+  // Long text is rendered in pieces so the first sentence plays while the rest
+  // is still being made. It stays one bubble: the split is a synthesis detail.
+  const pieces = await plan(text, flags).catch(() => null);
+  if (pieces) {
+    const release = await acquireLock();
+    try {
+      const answer = await showBubble({
+        text,
+        ask: Boolean(flags.ask),
+        rate: flags.rate,
+        chunks: pieces,
+        speech: Promise.resolve(),
+        onStop: () => stop.abort(),
+      });
+      if (!flags.ask) return;
+      if (answer.reason === 'reply' && answer.text) return void console.log(answer.text);
+      process.exitCode = 2;
+      return;
+    } finally {
+      release();
+    }
+  }
 
   // Ask for the bytes rather than letting speak() play them: the page plays
   // the audio so the transcript can follow its clock exactly.

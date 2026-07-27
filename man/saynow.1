@@ -1,4 +1,4 @@
-.TH SAYNOW 1 "2026-07-27" "saynow 0.8.0" "User Commands"
+.TH SAYNOW 1 "2026-07-27" "saynow 0.9.0" "User Commands"
 .SH NAME
 saynow \- speak text aloud from the terminal
 .SH SYNOPSIS
@@ -141,6 +141,10 @@ transcript, lit word by word in time with the audio, with a stop button and a
 dismiss button. It fades
 out shortly after the audio ends, so a sentence you half\-heard is still
 readable. Pass \fB\-\-no\-ui\fR to suppress it.
+.PP
+Long text is rendered a sentence at a time so speech starts while the rest is
+still being made, rather than after the whole article has been synthesised. It
+stays one bubble showing the full transcript; the split is not visible.
 .PP
 On macOS the bubble is a floating panel: no Dock icon, no entry in the
 application switcher, and it does not take focus from the app you are using.

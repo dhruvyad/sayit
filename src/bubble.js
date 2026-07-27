@@ -34,12 +34,25 @@ export async function showBubble({
   speech,
   audio,
   audioType,
+  chunks,
   timeoutMs = 120_000,
 } = {}) {
   // When the page plays the audio itself, the highlight is driven by the
   // element's own currentTime — exact by construction, rather than a
   // words-per-minute guess that starts whenever the page happened to load.
-  const state = { text, ask, rate: rate || 175, dismissMs, hasAudio: Boolean(audio) };
+  // Chunks are synthesised ahead of the page asking for them, so playback of
+  // one overlaps rendering of the next and speech starts almost immediately.
+  const pending = chunks ? new Map() : null;
+  if (chunks) prefetch(chunks, pending, 0);
+
+  const state = {
+    text,
+    ask,
+    rate: rate || 175,
+    dismissMs,
+    hasAudio: Boolean(audio),
+    chunks: chunks?.map((c) => ({ firstWord: c.firstWord, wordCount: c.wordCount })) ?? null,
+  };
   const page = renderPage(state);
 
   let settle;
@@ -54,6 +67,29 @@ export async function showBubble({
   };
 
   const server = http.createServer((req, res) => {
+    // /audio/<n> blocks until that chunk is rendered, which is what lets the
+    // page ask for the next one before it exists.
+    const chunkMatch = req.method === 'GET' && /^\/audio\/(\d+)$/.exec(req.url || '');
+    if (chunkMatch && chunks) {
+      const index = Number(chunkMatch[1]);
+      prefetch(chunks, pending, index + 1);
+      Promise.resolve(pending.get(index))
+        .then((rendered) => {
+          if (!rendered?.audio) {
+            res.writeHead(503).end();
+            return;
+          }
+          res.writeHead(200, {
+            'Content-Type': rendered.ext === 'mp3' ? 'audio/mpeg' : 'audio/wav',
+            'Content-Length': rendered.audio.length,
+            'Cache-Control': 'no-store',
+          });
+          res.end(rendered.audio);
+        })
+        .catch(() => res.writeHead(503).end());
+      return;
+    }
+
     if (req.method === 'GET' && req.url === '/audio' && audio) {
       res.writeHead(200, {
         'Content-Type': audioType || 'audio/wav',
@@ -123,6 +159,15 @@ export async function showBubble({
     for (const res of listeners) res.end();
     window.close();
     server.close();
+  }
+}
+
+/** Keep a small lookahead rendering, so the page rarely has to wait. */
+const LOOKAHEAD = 2;
+
+function prefetch(chunks, pending, from) {
+  for (let i = from; i < Math.min(chunks.length, from + LOOKAHEAD); i += 1) {
+    if (!pending.has(i)) pending.set(i, chunks[i].render());
   }
 }
 

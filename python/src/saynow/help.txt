@@ -128,7 +128,12 @@ THE SETTINGS APP
 THE BUBBLE
   Whenever saynow speaks it also shows a small bubble in the bottom-right
   corner carrying the transcript, lit word by word in time with the audio,
-  with a stop button and a dismiss button. It fades out shortly after the audio ends, so a sentence you
+  with a stop button and a dismiss button.
+
+  Long text is rendered a sentence at a time so speech starts while the rest
+  is still being made — a few seconds rather than the twenty a whole article
+  takes to synthesise. It stays one bubble showing the full transcript; the
+  split is a synthesis detail, not something you see. It fades out shortly after the audio ends, so a sentence you
   half-heard is still readable. Pass --no-ui to suppress it, or --quiet to
   keep it while silencing stderr.
 

@@ -4,9 +4,61 @@ import path from 'node:path';
 
 import { resolve, apiKey } from './config.js';
 import * as history from './history.js';
+import { chunk } from './chunk.js';
 import { get } from './providers/index.js';
 import { play } from './play.js';
 import { acquire } from './queue.js';
+
+/**
+ * Split `text` into chunks, each of which can be rendered on demand.
+ *
+ * Returns null when the provider cannot hand audio over, or when the text is
+ * short enough that the extra round trips cost more than they save.
+ */
+export async function plan(text, flags = {}) {
+  const config = resolve(flags);
+  const selected = get(config.provider);
+  let providerId = config.provider;
+  let key = apiKey(providerId, config);
+
+  if (!selected.speaksDirectly && !key) {
+    if (flags.strict) return null;
+    providerId = 'system';
+    key = null;
+  }
+
+  const provider = get(providerId);
+  const pieces = chunk(text);
+  if (pieces.length < 2) return null;
+
+  const render = (piece) => async () => {
+    if (provider.speaksDirectly) {
+      return provider.synthesize?.(piece, {
+        voice: config.voice,
+        rate: flags.rate ?? config.rate,
+      });
+    }
+    const result = await provider.synthesize(piece, {
+      apiKey: key,
+      voice: config.voice,
+      model: config.model,
+      speed: config.speed,
+    });
+    history.record({
+      audio: result.audio,
+      ext: result.ext,
+      text: piece,
+      provider: providerId,
+      model: result.model ?? config.model,
+      voice: result.voice ?? config.voice,
+      generationId: result.generationId,
+      limit: config.historyLimit ?? history.DEFAULT_LIMIT,
+    });
+    return result;
+  };
+
+  return pieces.map((piece) => ({ ...piece, render: render(piece.text) }));
+}
 
 /**
  * Speak `text` aloud.

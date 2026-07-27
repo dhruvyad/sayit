@@ -432,7 +432,10 @@
       const weights = words.map((word) => word.length + 1);
       const totalWeight = weights.reduce((sum, w) => sum + w, 0);
       const cumulative = [];
-      weights.reduce((sum, w, i) => (cumulative[i] = sum) + w, 0);
+      cumulative[words.length] = weights.reduce(
+        (sum, w, i) => (cumulative[i] = sum) + w,
+        0,
+      );
 
       let revealed = 0;
       const timers = [];
@@ -454,13 +457,20 @@
        * Reading currentTime is exact by construction, and self-corrects if
        * playback stalls or starts late.
        */
-      function followAudio(audio) {
+      function followAudio(audio, chunk) {
+        // Without a chunk this clip covers the whole transcript; with one it
+        // covers a slice, and the highlight resumes where the last left off.
+        const from = chunk ? chunk.firstWord : 0;
+        const to = chunk ? chunk.firstWord + chunk.wordCount : words.length;
+        const base = cumulative[from] ?? 0;
+        const span = (cumulative[to] ?? totalWeight) - base;
+
         const tick = () => {
           const { currentTime, duration } = audio;
-          if (duration > 0) {
-            const played = currentTime / duration;
-            let count = 0;
-            while (count < words.length && cumulative[count] / totalWeight <= played) {
+          if (duration > 0 && span > 0) {
+            const played = Math.min(currentTime / duration, 1);
+            let count = from;
+            while (count < to && (cumulative[count] - base) / span <= played) {
               count += 1;
             }
             litUpTo(count);
@@ -497,7 +507,52 @@
 
       let player = null;
 
-      if (state.hasAudio) {
+      if (state.chunks) {
+        /**
+         * Long text is synthesised in pieces so speech can start before the
+         * whole thing is rendered. That is a synthesis detail, not a visual
+         * one: it stays one bubble showing the entire transcript, and the
+         * highlight runs straight across the seams between clips.
+         */
+        let index = 0;
+        let next = null;
+
+        const startChunk = () => {
+          const chunk = state.chunks[index];
+          player = next ?? new Audio(`/audio/${index}`);
+          next = null;
+
+          // Warm the following clip while this one plays, so the join is not
+          // audible as a gap.
+          if (index + 1 < state.chunks.length) {
+            next = new Audio(`/audio/${index + 1}`);
+            next.preload = 'auto';
+            next.load();
+          }
+
+          player.addEventListener('play', () => followAudio(player, chunk));
+          player.addEventListener('ended', () => {
+            litUpTo(chunk.firstWord + chunk.wordCount);
+            index += 1;
+            if (index < state.chunks.length) {
+              startChunk();
+            } else {
+              audioEnded = true;
+              litUpTo(words.length);
+            }
+          });
+          player.addEventListener('error', () => {
+            audioEnded = true;
+            litUpTo(words.length);
+          });
+          player.play().catch(() => {
+            audioEnded = true;
+            followEstimate();
+          });
+        };
+
+        startChunk();
+      } else if (state.hasAudio) {
         // The page owns playback, so the highlight and the sound cannot drift.
         player = new Audio('/audio');
         player.addEventListener('play', () => followAudio(player));
