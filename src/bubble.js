@@ -59,6 +59,31 @@ export async function showBubble({
   const pending = chunks ? new Map() : null;
   if (chunks) prefetch(chunks, pending, 0);
 
+  /**
+   * A secret for this bubble only.
+   *
+   * The server listens on loopback with no other authentication, and POST
+   * /reply is what an agent reads as your answer — so anything able to reach
+   * the port could answer on your behalf and the agent would act on it. The
+   * page is served the token and hands it back; nothing else knows it.
+   *
+   * Declared before anything that closes over it. The asset callback below
+   * only runs for documents carrying a relative image, so a reference from
+   * above threw for those alone and left every other document working —
+   * exactly the shape of bug that survives a test suite.
+   */
+  const token = randomBytes(24).toString('hex');
+
+  const authorised = (req) => {
+    const supplied =
+      req.headers['x-saynow-token'] ||
+      new URL(req.url ?? '/', 'http://localhost').searchParams.get('t') ||
+      '';
+    const a = Buffer.from(String(supplied));
+    const b = Buffer.from(token);
+    return a.length === b.length && timingSafeEqual(a, b);
+  };
+
   const state = {
     text,
     ask,
@@ -81,26 +106,6 @@ export async function showBubble({
     chunks: chunks?.map((c) => ({ firstWord: c.firstWord, wordCount: c.wordCount })) ?? null,
   };
   const page = renderPage(state);
-
-  /**
-   * A secret for this bubble only.
-   *
-   * The server listens on loopback with no other authentication, and POST
-   * /reply is what an agent reads as your answer — so anything able to reach
-   * the port could answer on your behalf and the agent would act on it. The
-   * page is served the token and hands it back; nothing else knows it.
-   */
-  const token = randomBytes(24).toString('hex');
-
-  const authorised = (req) => {
-    const supplied =
-      req.headers['x-saynow-token'] ||
-      new URL(req.url ?? '/', 'http://localhost').searchParams.get('t') ||
-      '';
-    const a = Buffer.from(String(supplied));
-    const b = Buffer.from(token);
-    return a.length === b.length && timingSafeEqual(a, b);
-  };
 
   let settle;
   const answered = new Promise((resolve) => (settle = resolve));

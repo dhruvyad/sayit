@@ -128,3 +128,24 @@ test('a wrong token of the right length is still refused', async () => {
   const result = await answered;
   assert.equal(result.reason, 'dismiss');
 });
+
+test('a document carrying a relative image opens without throwing', async () => {
+  // The asset callback only runs for relative images, so a reference to the
+  // token from above it threw for exactly those documents and left every
+  // other one working — a shape that survives a suite testing anything else.
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const dir = mkdtempSync(join(tmpdir(), 'saynow-doc-'));
+  writeFileSync(join(dir, 'chart.png'), Buffer.from('not really a png'));
+  const markdown = '# Title\n\n![a chart](chart.png)\n\nSome prose.';
+
+  const result = await showBubble({
+    text: 'a document with an image',
+    document: { markdown, dir },
+    timeoutMs: 1200,
+  });
+
+  assert.equal(result.reason, 'dismiss', 'it should open and time out, not throw');
+});
