@@ -90,13 +90,20 @@ struct RootView: View {
             // The hidden title bar still draws the traffic lights over the
             // content, so give them a strip of their own. That frees the row
             // below to start at the true left edge instead of being pushed in.
-            Color.clear.frame(height: 26)
+            // Just tall enough to clear the buttons — any more reads as a gap.
+            // The mark sits at the same x as the buttons, so it cannot rise
+            // above them; this is the tightest it goes without a collision.
+            Color.clear.frame(height: 8)
 
-            HStack(spacing: 11) {
-                AppIcon(size: 30)
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                // The bare mark, not the bundle icon: a rounded plate belongs
+                // in the Dock, where the OS expects one, and looks like a
+                // sticker anywhere else.
+                Waveform(height: 26)
+                    .alignmentGuide(.firstTextBaseline) { $0.height * 0.82 }
 
                 Text("saynow")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(Theme.text)
 
                 Spacer(minLength: 16)
@@ -113,8 +120,8 @@ struct RootView: View {
                 .clipShape(Capsule())
                 .overlay(Capsule().strokeBorder(Theme.edge, lineWidth: 1))
             }
-            .padding(.horizontal, 18)
-            .padding(.bottom, 13)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 15)
 
             Rectangle().fill(Theme.edge).frame(height: 1)
         }
