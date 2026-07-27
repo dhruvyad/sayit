@@ -153,8 +153,9 @@ HISTORY
 
 LIMITATIONS
   Voice names are vendor-specific and OpenRouter rejects a request without
-  one. saynow ships verified voice lists for 8 of the 15 speech models; for
-  the rest, pass --voice explicitly. Run: saynow voices -p openrouter -m <id>
+  one, so saynow reads each model's published voices from the API and caches
+  them for a day. Two models publish none; for those, pass --voice and see
+  what the vendor accepts. Run: saynow voices -p openrouter -m <id>
   Only OpenRouter reports a price, so history costs are blank for the other
   providers.
   The system provider cannot write files, so it rejects --save.

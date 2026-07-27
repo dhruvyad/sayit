@@ -14,6 +14,8 @@ import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
+from .catalog import cached_voices, default_voice as catalog_default_voice, voices_for, catalog
+
 OPENAI_VOICES = [
     "alloy", "ash", "ballad", "coral", "echo",
     "fable", "nova", "onyx", "sage", "shimmer",
@@ -256,27 +258,6 @@ OPENROUTER_SPEECH_MODELS_URL = (
     "https://openrouter.ai/api/v1/models?output_modalities=speech"
 )
 
-# Voice names are vendor-specific and the API rejects a request without one.
-# Verified against the live API rather than taken from documentation.
-OPENROUTER_VOICES = {
-    "google/gemini-3.1-flash-tts-preview": [
-        "Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Aoede", "Leda", "Orus",
-        "Callirrhoe", "Autonoe", "Enceladus", "Iapetus", "Umbriel", "Algieba",
-        "Despina", "Erinome", "Laomedeia", "Schedar", "Achird", "Sadachbia",
-    ],
-    "deepgram/aura-2": [
-        "aura-2-thalia-en", "aura-2-andromeda-en", "aura-2-apollo-en",
-        "aura-2-arcas-en", "aura-2-asteria-en", "aura-2-athena-en",
-        "aura-2-helena-en", "aura-2-orion-en", "aura-2-zeus-en",
-    ],
-    "x-ai/grok-voice-tts-1.0": ["Eve"],
-    "hexgrad/kokoro-82m": ["af_heart", "af_bella", "am_michael"],
-    "canopylabs/orpheus-3b-0.1-ft": ["tara", "leah", "jess", "leo", "dan", "mia", "zac", "zoe"],
-    "sesame/csm-1b": ["conversational_a", "conversational_b", "read_speech_a"],
-    "minimax/speech-2.8-turbo": ["alloy"],
-    "minimax/speech-2.8-hd": ["alloy"],
-}
-
 # Vendors that reject the provider default and insist on mp3. Taken from their
 # own 400 messages; anything not listed is retried when the error names
 # response_format.
@@ -284,8 +265,7 @@ OPENROUTER_NEEDS_MP3 = {"minimax/speech-2.8-turbo", "minimax/speech-2.8-hd"}
 
 
 def openrouter_default_voice(model: str) -> Optional[str]:
-    voices = OPENROUTER_VOICES.get(model)
-    return voices[0] if voices else None
+    return catalog_default_voice(model)
 
 
 def _identify(buffer: bytes, content_type: str = "") -> Tuple[bytes, str]:
@@ -343,9 +323,10 @@ def synthesize_openrouter(
 
     if not chosen_voice:
         raise SystemExit(
-            f'saynow: model "{chosen_model}" needs an explicit voice — OpenRouter '
-            "rejects a request without one, and saynow has no verified voice list "
-            f'for it.\nPass one with: saynow -p openrouter -m {chosen_model} -v <voice> "text"'
+            f'saynow: model "{chosen_model}" needs a voice and OpenRouter '
+            "publishes none for it.\nSee what it accepts with: "
+            f"saynow voices -p openrouter -m {chosen_model}\n"
+            f'Then: saynow -p openrouter -m {chosen_model} -v <voice> "text"'
         )
 
     # Format support varies sharply: Gemini rejects every value, Deepgram
@@ -414,19 +395,14 @@ def openrouter_lookup_cost(generation_id: str, api_key: str) -> Optional[float]:
 
 def openrouter_audio_models() -> List[Dict[str, Any]]:
     """Every OpenRouter model that can synthesise speech, with what it costs."""
-    try:
-        with urllib.request.urlopen(OPENROUTER_SPEECH_MODELS_URL) as response:
-            payload = json.loads(response.read())
-    except (urllib.error.URLError, json.JSONDecodeError):
-        return []
     return [
         {
             "id": m["id"],
-            "price": float((m.get("pricing") or {}).get("prompt") or 0),
-            "voices": len(OPENROUTER_VOICES.get(m["id"], [])),
+            "price": m["price"],
+            "voices": len(m["voices"]) or len(cached_voices(m["id"])),
             "is_default": m["id"] == OPENROUTER_DEFAULT_MODEL,
         }
-        for m in payload.get("data", [])
+        for m in catalog(refresh=True)
     ]
 
 
@@ -445,9 +421,15 @@ def voices(provider_id: str, api_key: Optional[str] = None, model: Optional[str]
         return [(name, "multi", "") for name in OPENAI_VOICES]
     if provider_id == "openrouter":
         chosen = model or OPENROUTER_DEFAULT_MODEL
-        known = OPENROUTER_VOICES.get(chosen)
+        known = voices_for(chosen)
         if not known:
-            return [("(unknown)", "", f"no verified voice list for {chosen} — pass --voice")]
+            return [
+                (
+                    "(none published)",
+                    "",
+                    f"OpenRouter lists no voices for {chosen} — pass --voice to try one",
+                )
+            ]
         return [
             (name, chosen.split("/")[0], "default" if i == 0 else "")
             for i, name in enumerate(known)

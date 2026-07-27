@@ -1,4 +1,4 @@
-.TH SAYNOW 1 "2026-07-27" "saynow 0.6.0" "User Commands"
+.TH SAYNOW 1 "2026-07-27" "saynow 0.7.0" "User Commands"
 .SH NAME
 saynow \- speak text aloud from the terminal
 .SH SYNOPSIS
@@ -215,8 +215,9 @@ archived, because it speaks directly and never produces a file.
 .SH LIMITATIONS
 Voice names are vendor\-specific and OpenRouter rejects a request without one.
 .B saynow
-ships verified voice lists for 8 of the 15 speech models; for the rest, pass
-\fB\-\-voice\fR explicitly.
+reads each model's published voices from the API and caches them for a day.
+Two models publish none; for those, pass \fB\-\-voice\fR and see what the
+vendor accepts.
 .PP
 The
 .B system

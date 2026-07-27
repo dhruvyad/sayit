@@ -13,82 +13,66 @@ struct SpeechTab: View {
         config.model.isEmpty ? "google/gemini-3.1-flash-tts-preview" : config.model
     }
 
-    private var knownVoices: [String]? {
+    private var voiceOptions: [String] {
         switch config.provider {
         case "openai": return Voices.openai
-        case "openrouter": return Voices.known(for: effectiveModel)
-        default: return nil
+        case "openrouter": return catalog.voices(for: effectiveModel)
+        default: return []
         }
     }
 
-    private var selected: SpeechModel? {
-        catalog.models.first { $0.id == effectiveModel }
-    }
+    private var selected: SpeechModel? { catalog.models.first { $0.id == effectiveModel } }
 
     private var missingKey: Bool {
         config.provider != "system" && config.key(for: config.provider) == nil
     }
 
     var body: some View {
-        Form {
-            Section {
-                Picker("Provider", selection: $config.provider) {
-                    ForEach(providers, id: \.self) { Text(label(for: $0)).tag($0) }
+        VStack(alignment: .leading, spacing: 18) {
+            Card(title: "Voice") {
+                Row(label: "Provider", detail: providerNote) {
+                    ThemedPicker(options: providers, display: label(for:), selection: $config.provider)
                 }
 
                 if usesModels {
-                    if catalog.loading {
-                        LabeledContent("Model") {
-                            HStack(spacing: 7) {
+                    Divider1()
+                    Row(label: "Model", detail: selected?.pricePerThousand) {
+                        if catalog.loading {
+                            HStack(spacing: 6) {
                                 ProgressView().controlSize(.small)
-                                Text("Loading…").foregroundStyle(.secondary)
+                                Text("Loading…").foregroundStyle(Theme.muted)
                             }
+                        } else if catalog.models.isEmpty {
+                            ThemedField(prompt: "model id", text: $config.model)
+                        } else {
+                            ThemedPicker(
+                                options: catalog.models.map(\.id),
+                                selection: $config.model
+                            )
+                            .onChange(of: config.model) { _, _ in reconcileVoice() }
                         }
-                    } else if catalog.error != nil {
-                        LabeledContent("Model") {
-                            TextField("", text: $config.model, prompt: Text("model id"))
-                                .multilineTextAlignment(.trailing)
-                        }
-                    } else {
-                        Picker("Model", selection: $config.model) {
-                            ForEach(catalog.models) { model in
-                                Text(model.id).tag(model.id)
-                            }
-                        }
-                        .onChange(of: config.model) { _, _ in resetVoice() }
                     }
                 }
 
-                if let voices = knownVoices {
-                    Picker("Voice", selection: $config.voice) {
-                        ForEach(voices, id: \.self) { Text($0).tag($0) }
+                Divider1()
+                Row(label: "Voice", detail: voiceNote) {
+                    if voiceOptions.isEmpty {
+                        ThemedField(prompt: "provider default", text: $config.voice)
+                    } else {
+                        ThemedPicker(options: voiceOptions, selection: $config.voice)
                     }
-                } else {
-                    LabeledContent("Voice") {
-                        TextField("", text: $config.voice, prompt: Text("provider default"))
-                            .multilineTextAlignment(.trailing)
-                    }
-                }
-            } footer: {
-                if usesModels && knownVoices == nil {
-                    notice(
-                        "No verified voice list for this model. OpenRouter rejects a "
-                            + "request without a voice, so enter one.",
-                        icon: "questionmark.circle",
-                        tint: .secondary
-                    )
-                }
-                if missingKey {
-                    notice(
-                        "No API key for \(config.provider). saynow speaks with the system "
-                            + "voice until one is set.",
-                        icon: "exclamationmark.triangle",
-                        tint: .orange
-                    )
                 }
             }
 
-            Section("Preview") {
+            if missingKey {
+                Note(
+                    text: "No API key for \(config.provider). saynow speaks with the system voice until one is set.",
+                    icon: "exclamationmark.triangle.fill",
+                    tint: .orange
+                )
+            }
+
+            Card(title: "Preview") {
                 HStack(spacing: 12) {
                     Button {
                         speaker.speaking
@@ -100,57 +84,85 @@ struct SpeechTab: View {
                                 text: "This is how saynow will sound."
                             )
                     } label: {
-                        Label(
-                            speaker.speaking ? "Stop" : "Play sample",
-                            systemImage: speaker.speaking ? "stop.fill" : "play.fill"
-                        )
-                        .fixedSize()
-                        .frame(width: 100)
+                        HStack(spacing: 6) {
+                            Image(systemName: speaker.speaking ? "stop.fill" : "play.fill")
+                                .font(.system(size: 10))
+                            Text(speaker.speaking ? "Stop" : "Play sample")
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(PrimaryButton())
                     .disabled(!speaker.available)
 
+                    if speaker.speaking {
+                        Waveform(height: 14, animating: true)
+                    }
+
                     Text("“This is how saynow will sound.”")
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
                         .italic()
+                        .foregroundStyle(Theme.muted)
+                        .lineLimit(1)
 
-                    Spacer()
+                    Spacer(minLength: 0)
                 }
+                .padding(.horizontal, 14)
+                .frame(minHeight: Theme.rowHeight + 6)
+            }
 
-                if !speaker.available {
-                    notice(
-                        "The saynow command line tool was not found, so preview is "
-                            + "unavailable. Install it with: npm install -g saynow",
-                        icon: "terminal",
-                        tint: .secondary
-                    )
-                }
-                if let problem = speaker.problem {
-                    notice(problem, icon: "xmark.octagon", tint: .red)
-                }
+            if !speaker.available {
+                Note(
+                    text: "The saynow command line tool was not found, so preview is unavailable. Install it with: npm install -g saynow",
+                    icon: "terminal"
+                )
+            }
+            if let problem = speaker.problem {
+                Note(text: problem, icon: "xmark.octagon.fill", tint: .red)
             }
 
             if usesModels, let model = selected {
-                Section("This model") {
-                    LabeledContent("Vendor", value: model.vendor)
-                    LabeledContent("Price", value: model.pricePerThousand)
-                    LabeledContent(
-                        "Voices",
-                        value: Voices.known(for: model.id).map { "\($0.count)" }
-                            ?? "not catalogued"
-                    )
-                    LabeledContent("A 1,000-word article", value: estimate(for: model))
+                Card(title: "This model") {
+                    Row(label: "Vendor") { value(model.vendor) }
+                    Divider1()
+                    Row(label: "Price") { value(model.pricePerThousand) }
+                    Divider1()
+                    Row(label: "Voices published") {
+                        value(model.voices.isEmpty ? "none" : "\(model.voices.count)")
+                    }
+                    Divider1()
+                    Row(label: "A 1,000-word article") { value(estimate(for: model)) }
                 }
             }
         }
-        .formStyle(.grouped)
-        .task { if catalog.models.isEmpty { await catalog.load() } }
+        .onChange(of: catalog.models.count) { _, _ in reconcileVoice() }
+        .onChange(of: config.provider) { _, _ in reconcileVoice() }
+        .onAppear { reconcileVoice() }
     }
 
-    /// Voices do not carry across vendors, so a stale one would be rejected by
-    /// the API rather than quietly ignored.
-    private func resetVoice() {
-        config.voice = Voices.known(for: effectiveModel)?.first ?? ""
+    /// Keep the stored voice valid for the chosen model.
+    ///
+    /// Voices are vendor-specific, so one left over from another model is not
+    /// merely cosmetic — the API rejects the request outright. Runs whenever
+    /// the model changes and once the catalogue arrives, since before that the
+    /// list of valid names is not yet known.
+    private func reconcileVoice() {
+        let options = voiceOptions
+        guard !options.isEmpty else { return }
+        if !options.contains(config.voice) {
+            config.voice = options[0]
+        }
+    }
+
+    private func value(_ text: String) -> some View {
+        Text(text).font(.system(size: 12.5)).foregroundStyle(Theme.muted)
+    }
+
+    private var providerNote: String? {
+        config.provider == "system" ? "offline, no key, no cost" : nil
+    }
+
+    private var voiceNote: String? {
+        guard usesModels, voiceOptions.isEmpty else { return nil }
+        return "OpenRouter publishes none for this model"
     }
 
     /// Roughly 1.3 tokens a word, which is the useful end of the pricing table:
@@ -163,19 +175,12 @@ struct SpeechTab: View {
             : String(format: "about $%.2f", cost)
     }
 
-    private func notice(_ text: String, icon: String, tint: Color) -> some View {
-        Label(text, systemImage: icon)
-            .font(.callout)
-            .foregroundStyle(tint)
-            .padding(.top, 3)
-    }
-
     private func label(for name: String) -> String {
         switch name {
-        case "system": return "System — offline, free"
+        case "system": return "System"
         case "openai": return "OpenAI"
         case "elevenlabs": return "ElevenLabs"
-        case "openrouter": return "OpenRouter — 15+ models"
+        case "openrouter": return "OpenRouter"
         default: return name
         }
     }

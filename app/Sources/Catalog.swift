@@ -3,6 +3,7 @@ import Foundation
 struct SpeechModel: Identifiable, Hashable {
     let id: String
     let price: Double
+    let voices: [String]
     var vendor: String { id.split(separator: "/").first.map(String.init) ?? id }
 
     /// Priced per input token; scale to something a person can compare.
@@ -11,28 +12,13 @@ struct SpeechModel: Identifiable, Hashable {
     }
 }
 
-/// Voice names are vendor-specific and OpenRouter rejects a request without
-/// one, so the picker needs a list per model. These were verified against the
-/// live API; models absent here fall back to a free-text field, because an
-/// empty dropdown is worse than a text box.
+/// Voices come from the API. A hardcoded table was not merely incomplete, it
+/// was wrong: Grok's voice is "eve", not "Eve", and Deepgram has 90 voices
+/// rather than the 9 that guessing found. This is only a cold-start fallback.
 enum Voices {
-    static let table: [String: [String]] = [
-        "google/gemini-3.1-flash-tts-preview": [
-            "Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Aoede", "Leda", "Orus",
-            "Callirrhoe", "Autonoe", "Enceladus", "Iapetus", "Umbriel", "Algieba",
-            "Despina", "Erinome", "Laomedeia", "Schedar", "Achird", "Sadachbia",
-        ],
-        "deepgram/aura-2": [
-            "aura-2-thalia-en", "aura-2-andromeda-en", "aura-2-apollo-en",
-            "aura-2-arcas-en", "aura-2-asteria-en", "aura-2-athena-en",
-            "aura-2-helena-en", "aura-2-orion-en", "aura-2-zeus-en",
-        ],
-        "x-ai/grok-voice-tts-1.0": ["Eve"],
-        "hexgrad/kokoro-82m": ["af_heart", "af_bella", "am_michael"],
-        "canopylabs/orpheus-3b-0.1-ft": [
-            "tara", "leah", "jess", "leo", "dan", "mia", "zac", "zoe",
-        ],
-        "sesame/csm-1b": ["conversational_a", "conversational_b", "read_speech_a"],
+    static let fallback: [String: [String]] = [
+        "google/gemini-3.1-flash-tts-preview": ["Zephyr", "Puck", "Charon", "Kore"],
+        "x-ai/grok-voice-tts-1.0": ["eve", "ara", "rex", "sal", "leo"],
         "minimax/speech-2.8-turbo": ["alloy"],
         "minimax/speech-2.8-hd": ["alloy"],
     ]
@@ -41,8 +27,6 @@ enum Voices {
         "alloy", "ash", "ballad", "coral", "echo",
         "fable", "nova", "onyx", "sage", "shimmer",
     ]
-
-    static func known(for model: String) -> [String]? { table[model] }
 }
 
 /// Loads the speech-model catalog from OpenRouter.
@@ -57,6 +41,12 @@ final class Catalog: ObservableObject {
     private static let url = URL(
         string: "https://openrouter.ai/api/v1/models?output_modalities=speech"
     )!
+
+    /// Voices for a model, from the loaded catalogue.
+    func voices(for model: String) -> [String] {
+        let published = models.first { $0.id == model }?.voices ?? []
+        return published.isEmpty ? (Voices.fallback[model] ?? []) : published
+    }
 
     func load() async {
         guard !loading else { return }
@@ -78,7 +68,12 @@ final class Catalog: ObservableObject {
                 let pricing = entry["pricing"] as? [String: Any]
                 let prompt = pricing?["prompt"]
                 let price = Double("\(prompt ?? 0)") ?? 0
-                return SpeechModel(id: id, price: price)
+                return SpeechModel(
+                    id: id,
+                    price: price,
+                    voices: entry["supported_voices"] as? [String]
+                        ?? Voices.fallback[id] ?? []
+                )
             }
             .sorted { $0.price < $1.price }
         } catch {

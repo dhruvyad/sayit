@@ -21,7 +21,8 @@ struct Clip: Identifiable, Hashable {
     let provider: String
     let model: String?
     let voice: String?
-    let cost: Double?
+    var cost: Double?
+    let generationId: String?
     let text: String
 
     var id: String { file }
@@ -59,6 +60,53 @@ final class HistoryStore: ObservableObject {
         ByteCountFormatter.string(fromByteCount: Int64(totalBytes), countStyle: .file)
     }
 
+    /// Fill in prices the CLI has not resolved yet.
+    ///
+    /// Held in memory rather than written back: the CLI owns index.json, and a
+    /// second writer is a needless way to lose clips. The cost of that is a
+    /// few requests per launch, which is cheaper than a corrupted archive.
+    func resolveCosts(key: String) async {
+        let pending = clips.filter { $0.cost == nil && $0.generationId != nil }
+        guard !pending.isEmpty else { return }
+
+        // Fetched concurrently: an archive of fifty clips resolved one at a
+        // time leaves most of the list showing a dash for several seconds.
+        let found = await withTaskGroup(of: (String, Double)?.self) { group in
+            for clip in pending {
+                guard let id = clip.generationId else { continue }
+                group.addTask { await Self.cost(of: id, key: key).map { (clip.id, $0) } }
+            }
+            var results: [String: Double] = [:]
+            for await result in group {
+                if let (id, cost) = result { results[id] = cost }
+            }
+            return results
+        }
+
+        for (index, clip) in clips.enumerated() where found[clip.id] != nil {
+            clips[index].cost = found[clip.id]
+        }
+    }
+
+    private static func cost(of generationId: String, key: String) async -> Double? {
+        let escaped =
+            generationId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
+            ?? generationId
+        guard let url = URL(string: "https://openrouter.ai/api/v1/generation?id=\(escaped)")
+        else { return nil }
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+
+        guard
+            let (data, _) = try? await URLSession.shared.data(for: request),
+            let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let entry = payload["data"] as? [String: Any]
+        else { return nil }
+
+        return entry["total_cost"] as? Double
+    }
+
     func reload() {
         guard
             let data = try? Data(contentsOf: Archive.index),
@@ -82,6 +130,7 @@ final class HistoryStore: ObservableObject {
                 model: entry["model"] as? String,
                 voice: entry["voice"] as? String,
                 cost: entry["cost"] as? Double,
+                generationId: entry["generation_id"] as? String,
                 text: entry["text"] as? String ?? ""
             )
         }

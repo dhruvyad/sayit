@@ -1,3 +1,5 @@
+import { catalog, cachedVoices, defaultVoice as catalogDefaultVoice, voicesFor } from '../catalog.js';
+
 export const id = 'openrouter';
 export const label = 'OpenRouter (15+ dedicated speech models)';
 export const speaksDirectly = false;
@@ -6,42 +8,11 @@ export const configKey = 'openrouterApiKey';
 
 const SPEECH_ENDPOINT = 'https://openrouter.ai/api/v1/audio/speech';
 
-/**
- * Speech models are NOT returned by the plain /models listing — that endpoint
- * omits the whole speech category. They only appear under this filter, which
- * is an easy thing to be confidently wrong about.
- */
-const SPEECH_MODELS_URL = 'https://openrouter.ai/api/v1/models?output_modalities=speech';
-
 const DEFAULT_MODEL = 'google/gemini-3.1-flash-tts-preview';
 
 /**
- * Voice names are vendor-specific and the API rejects a request without one,
- * so every model needs a default. These lists were verified against the live
- * API rather than taken from documentation.
- */
-export const VOICES = {
-  'google/gemini-3.1-flash-tts-preview': [
-    'Zephyr', 'Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Leda', 'Orus',
-    'Callirrhoe', 'Autonoe', 'Enceladus', 'Iapetus', 'Umbriel', 'Algieba',
-    'Despina', 'Erinome', 'Laomedeia', 'Schedar', 'Achird', 'Sadachbia',
-  ],
-  'deepgram/aura-2': [
-    'aura-2-thalia-en', 'aura-2-andromeda-en', 'aura-2-apollo-en',
-    'aura-2-arcas-en', 'aura-2-asteria-en', 'aura-2-athena-en',
-    'aura-2-helena-en', 'aura-2-orion-en', 'aura-2-zeus-en',
-  ],
-  'x-ai/grok-voice-tts-1.0': ['Eve'],
-  'hexgrad/kokoro-82m': ['af_heart', 'af_bella', 'am_michael'],
-  'canopylabs/orpheus-3b-0.1-ft': ['tara', 'leah', 'jess', 'leo', 'dan', 'mia', 'zac', 'zoe'],
-  'sesame/csm-1b': ['conversational_a', 'conversational_b', 'read_speech_a'],
-  'minimax/speech-2.8-turbo': ['alloy'],
-  'minimax/speech-2.8-hd': ['alloy'],
-};
-
-/**
- * Vendors that reject the provider default and insist on mp3. Discovered from
- * their own 400 messages rather than guessed; anything not listed is retried
+ * Vendors that reject the provider default and insist on mp3. Taken from their
+ * own 400 messages rather than guessed; anything not listed is retried
  * automatically when the error names response_format.
  */
 const NEEDS_MP3 = new Set(['minimax/speech-2.8-turbo', 'minimax/speech-2.8-hd']);
@@ -53,7 +24,7 @@ const CHANNELS = 1;
 const BIT_DEPTH = 16;
 
 export function defaultVoice(model) {
-  return VOICES[model]?.[0] ?? null;
+  return catalogDefaultVoice(model);
 }
 
 export async function synthesize(text, { apiKey, voice, model } = {}) {
@@ -62,9 +33,9 @@ export async function synthesize(text, { apiKey, voice, model } = {}) {
 
   if (!chosenVoice) {
     throw new Error(
-      `model "${chosenModel}" needs an explicit voice — OpenRouter rejects a request without one, ` +
-        `and saynow has no verified voice list for it.\n` +
-        `Pass one with: saynow -p openrouter -m ${chosenModel} -v <voice> "text"`,
+      `model "${chosenModel}" needs a voice and OpenRouter publishes none for it.\n` +
+        `See what it accepts with: saynow voices -p openrouter -m ${chosenModel}\n` +
+        `Then: saynow -p openrouter -m ${chosenModel} -v <voice> "text"`,
     );
   }
 
@@ -174,16 +145,16 @@ function wavHeader(dataLength, rate = SAMPLE_RATE, channels = CHANNELS) {
   return header;
 }
 
-export function voices({ model } = {}) {
+export async function voices({ model } = {}) {
   const chosenModel = model || DEFAULT_MODEL;
-  const known = VOICES[chosenModel];
+  const known = await voicesFor(chosenModel);
 
-  if (!known) {
+  if (!known.length) {
     return [
       {
-        name: '(unknown)',
+        name: '(none published)',
         locale: '',
-        note: `no verified voice list for ${chosenModel} — pass --voice explicitly`,
+        note: `OpenRouter lists no voices for ${chosenModel} — pass --voice to try one`,
       },
     ];
   }
@@ -197,15 +168,12 @@ export function voices({ model } = {}) {
 
 /** Every OpenRouter model that can synthesise speech, with what it costs. */
 export async function audioModels() {
-  const res = await fetch(SPEECH_MODELS_URL);
-  if (!res.ok) return [];
-  const { data } = await res.json();
-
-  return data.map((m) => ({
+  const models = await catalog({ refresh: true });
+  return models.map((m) => ({
     id: m.id,
     // Priced per input token; completion is free on most speech models.
-    price: Number(m.pricing?.prompt ?? 0),
-    voices: VOICES[m.id]?.length ?? 0,
+    price: m.price,
+    voices: m.voices.length || cachedVoices(m.id).length,
     isDefault: m.id === DEFAULT_MODEL,
   }));
 }
