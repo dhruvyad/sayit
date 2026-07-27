@@ -202,7 +202,9 @@
         font-size: 14.5px;
         line-height: 1.5;
         letter-spacing: -0.003em;
-        max-height: 168px;
+        /* Roughly 23 lines. Only bites on genuinely long reads — short text
+           still sizes to itself, and the panel follows the content height. */
+        max-height: 504px;
         overflow-y: auto;
         overscroll-behavior: contain;
         scrollbar-width: none;
@@ -282,9 +284,15 @@
         background: rgba(255, 255, 255, 0.22);
         transform-origin: left;
         transform: scaleX(1);
+        /* Hidden until a countdown actually runs. Without this it sat at full
+           width along the bottom edge for the whole of every plain
+           announcement, where no countdown ever starts, and read as a stray
+           bright line rather than as a timer. */
+        opacity: 0;
       }
 
       .timer.running {
+        opacity: 1;
         transition: transform linear;
       }
 
