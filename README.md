@@ -114,6 +114,21 @@ blocks progress, or an error that needs attention. Keep it to one short
 sentence — it is spoken aloud, not read. Do not narrate routine progress.
 ```
 
+## Settings app
+
+A small macOS app for the things a flag is a clumsy way to set — picking a
+model from the live OpenRouter catalogue, storing keys, and browsing what you
+have already synthesised.
+
+```bash
+./app/build.sh --install     # builds Saynow.app and puts it in /Applications
+```
+
+It is a separate process from the CLI and they meet only at
+`~/.config/saynow/config.json`, so either works without the other. Building it
+needs the Xcode command line tools; there is no Xcode project, just `swiftc`
+and an `Info.plist`.
+
 ## How the bubble works
 
 On macOS it's a borderless `NSPanel` hosting a `WKWebView`: no Dock icon, no

@@ -1,4 +1,5 @@
 node_modules/
+app/build/
 *.tgz
 .DS_Store
 

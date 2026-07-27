@@ -79,3 +79,25 @@ jobs:
           node bin/saynow.js --help > /tmp/node-help.txt
           saynow --help > /tmp/python-help.txt
           diff /tmp/node-help.txt /tmp/python-help.txt
+
+  app:
+    name: settings app builds
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build Saynow.app
+        run: ./app/build.sh
+      - name: The bundle is well formed
+        run: |
+          test -x app/build/Saynow.app/Contents/MacOS/Saynow
+          test -f app/build/Saynow.app/Contents/Info.plist
+          test -f app/build/Saynow.app/Contents/Resources/Saynow.icns
+          plutil -lint app/build/Saynow.app/Contents/Info.plist
+          # The app version must match the package, or the About box lies.
+          APP=$(plutil -extract CFBundleShortVersionString raw app/build/Saynow.app/Contents/Info.plist)
+          NPM=$(node -p "require('./package.json').version")
+          echo "app=$APP npm=$NPM"
+          test "$APP" = "$NPM"
