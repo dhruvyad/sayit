@@ -960,8 +960,8 @@
       // does not reliably deliver that focus synchronously, so a flag set
       // around our own focus() call cannot be trusted to still be set when
       // the event arrives. A pointer or a key is unambiguously the user.
-      el.field.addEventListener('pointerdown', engage);
-      el.field.addEventListener('mousedown', engage);
+      el.field.addEventListener('pointerdown', reconsider);
+      el.field.addEventListener('mousedown', reconsider);
       el.send.addEventListener('click', submit);
 
       // Held down, then looked at again on the way up. A key that never
@@ -974,6 +974,13 @@
       });
 
       el.field.addEventListener('keyup', reconsider);
+
+      // A key can also be abandoned rather than released: hold one down, switch
+      // window, and the keyup is delivered somewhere else entirely. Looking
+      // again when the box or the window loses focus is what stops that one
+      // keystroke holding the bubble open for the rest of its life.
+      el.field.addEventListener('blur', reconsider);
+      window.addEventListener('blur', reconsider);
 
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') close('dismiss');
@@ -988,8 +995,11 @@
 
       // A click anywhere inside is unambiguous: they are using this. It holds
       // only until the pointer leaves, though — the countdown it stops is the
-      // one the pointer will start again on the way out.
-      el.bubble.addEventListener('click', engage);
+      // one the pointer will start again on the way out. Reconsidered rather
+      // than simply stopped, because a click does not prove the pointer is
+      // here: Space on a focused button is a click too, and mouseleave has
+      // long since been and gone.
+      el.bubble.addEventListener('click', reconsider);
 
       el.bubble.addEventListener('mouseleave', () => {
         hovering = false;

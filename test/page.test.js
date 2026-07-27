@@ -24,10 +24,17 @@ function loadPage(state) {
   const { document, byId, search } = createDom({ markup: PAGE });
   const calls = { fetched: [], audio: [], players: [], events: [] };
 
+  // The window is an event target too, and losing focus is how a half-finished
+  // keystroke gets abandoned, so its listeners have to be reachable from here.
+  const windowListeners = new Map();
+
   const context = {
     window: {
       __SAYNOW__: state,
-      addEventListener() {},
+      addEventListener(type, handler) {
+        if (!windowListeners.has(type)) windowListeners.set(type, []);
+        windowListeners.get(type).push(handler);
+      },
       webkit: undefined,
     },
     document,
@@ -82,7 +89,11 @@ function loadPage(state) {
   const run = new Function(...Object.keys(context), SCRIPT);
   run(...Object.values(context));
 
-  return { document, byId, calls };
+  const fireOnWindow = (type, event = {}) => {
+    for (const handler of windowListeners.get(type) ?? []) handler(event);
+  };
+
+  return { document, byId, calls, fireOnWindow };
 }
 
 const PLAIN = { text: 'The build finished, 42 tests passed.', ask: false, rate: 175, dismissMs: 5000 };
@@ -295,6 +306,32 @@ test('a draft deleted back to nothing gives the countdown back', () => {
   field.dispatch('input');
   assert.equal(bar.style.transform, 'scaleX(0)', 'an empty box is not a reply in progress');
   assert.equal(bar.style.opacity, '1', 'and the bar has to be visible again');
+});
+
+test('a keystroke abandoned by switching window does not strand the countdown', () => {
+  // A key can be let go of somewhere else: hold one down, switch window, and
+  // the keyup is delivered to whatever you switched to. The countdown that
+  // keydown stopped then had nothing left to restart it.
+  const { byId, calls, fireOnWindow } = loadPage({ ...PLAIN, ask: true, hasAudio: true });
+  calls.players[0].handlers.ended();
+
+  byId.get('field').dispatch('keydown', { key: 'a' });
+  fireOnWindow('blur');
+
+  assert.equal(byId.get('timer').style.transform, 'scaleX(0)', 'it must still count down');
+  assert.equal(byId.get('timer').style.opacity, '1');
+});
+
+test('a click with the pointer elsewhere does not strand the countdown', () => {
+  // Space on a focused button is a click too, and by then mouseleave has long
+  // since been and gone — so a click cannot be taken as proof anyone is here.
+  const { byId, calls } = loadPage({ ...PLAIN, ask: true, hasAudio: true });
+  calls.players[0].handlers.ended();
+
+  byId.get('bubble').dispatch('click');
+
+  assert.equal(byId.get('timer').style.transform, 'scaleX(0)', 'it must still count down');
+  assert.equal(byId.get('timer').style.opacity, '1');
 });
 
 test('a key that never becomes text does not strand the countdown', () => {
