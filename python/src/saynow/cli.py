@@ -132,13 +132,14 @@ def speak(text: str, args: argparse.Namespace) -> int:
             providers.speak_system(text, voice=config.get("voice"), rate=args.rate)
         return 0
 
-    audio, ext, used_model, used_voice = providers.SYNTHESIZERS[provider_id](
+    result = providers.SYNTHESIZERS[provider_id](
         text,
         api_key=key,
         voice=config.get("voice"),
         model=config.get("model"),
         speed=config.get("speed"),
     )
+    audio, ext = result["audio"], result["ext"]
 
     # Archive before playing: a long article is expensive to regenerate.
     history.record(
@@ -146,8 +147,9 @@ def speak(text: str, args: argparse.Namespace) -> int:
         ext=ext,
         text=text,
         provider=provider_id,
-        model=used_model,
-        voice=used_voice,
+        model=result["model"],
+        voice=result["voice"],
+        generation_id=result.get("generation_id"),
         limit=int(config.get("historyLimit") or history.DEFAULT_LIMIT),
     )
 
@@ -307,6 +309,13 @@ def history_command(rest: List[str]) -> int:
         return 0
 
     if action == "list":
+        # Prices are looked up here rather than at synthesis time, so speaking
+        # is never delayed by a round trip just to learn what it cost.
+        key = cfg.api_key("openrouter")
+        if key:
+            history.resolve_costs(
+                lambda gen: providers.openrouter_lookup_cost(gen, key)
+            )
         entries = history.read_index()
         if not entries:
             print("No archived clips yet.")
@@ -317,11 +326,15 @@ def history_command(rest: List[str]) -> int:
             when = entry["at"].replace("T", " ")[:16]
             size = history.format_bytes(entry["bytes"]).rjust(8)
             source = " / ".join(x for x in (entry["provider"], entry.get("model"), entry.get("voice")) if x)
-            print(f"{i:>3}. {when}  {size}  {source}")
+            cost = f"${entry['cost']:.4f}" if entry.get("cost") is not None else ""
+            print(f"{i:>3}. {when}  {size}  {cost:>8}  {source}")
             print(f"     {' '.join(entry['text'].split())[:88]}")
+        spent = history.total_cost()
         print(
             f"\n{len(entries)} clip{'' if len(entries) == 1 else 's'}, "
-            f"{history.format_bytes(history.usage())} in {history.history_dir()}"
+            f"{history.format_bytes(history.usage())}"
+            + (f", ${spent:.4f} spent" if spent else "")
+            + f"\n{history.history_dir()}"
             "\nPlay one with: saynow history open <n>"
         )
         return 0

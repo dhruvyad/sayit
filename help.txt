@@ -139,9 +139,12 @@ HISTORY
   are kept; change that with: saynow config set historyLimit <n>, or set it to
   0 to archive nothing.
 
-    saynow history            list clips, newest first
+    saynow history            list clips, newest first, with what each cost
     saynow history open 3     play the third
     saynow history path       print the directory, to share a file from it
+
+  Prices come from OpenRouter and are looked up when you run the listing, not
+  during synthesis, so speaking is never delayed to learn what it cost.
 
   The system voice is not archived. It speaks directly and never produces a
   file, so there is nothing to keep. Clip size varies a lot by model: some
@@ -150,8 +153,10 @@ HISTORY
 
 LIMITATIONS
   Voice names are vendor-specific and OpenRouter rejects a request without
-  one. saynow ships verified voice lists for the models it knows; for the
-  rest, pass --voice explicitly. Run: saynow voices -p openrouter -m <id>
+  one. saynow ships verified voice lists for 8 of the 15 speech models; for
+  the rest, pass --voice explicitly. Run: saynow voices -p openrouter -m <id>
+  Only OpenRouter reports a price, so history costs are blank for the other
+  providers.
   The system provider cannot write files, so it rejects --save.
   Windows support is best-effort and less tested than macOS and Linux.
   --ask needs the npm build. The pip build speaks the text and then exits 2,

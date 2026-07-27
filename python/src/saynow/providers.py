@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import shutil
 import struct
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -170,7 +172,7 @@ def synthesize_openai(
     voice: Optional[str] = None,
     model: Optional[str] = None,
     speed: Optional[float] = None,
-) -> Tuple[bytes, str, str, str]:
+) -> Dict[str, Any]:
     body: Dict[str, Any] = {
         "model": model or "gpt-4o-mini-tts",
         "voice": voice or "alloy",
@@ -187,7 +189,13 @@ def synthesize_openai(
         body,
         "OpenAI",
     )
-    return audio, "mp3", body["model"], body["voice"]
+    return {
+        "audio": audio,
+        "ext": "mp3",
+        "model": body["model"],
+        "voice": body["voice"],
+        "generation_id": None,
+    }
 
 
 def synthesize_elevenlabs(
@@ -196,7 +204,7 @@ def synthesize_elevenlabs(
     voice: Optional[str] = None,
     model: Optional[str] = None,
     speed: Optional[float] = None,
-) -> Tuple[bytes, str, str, str]:
+) -> Dict[str, Any]:
     voice_id = voice or ELEVENLABS_DEFAULT_VOICE
     body: Dict[str, Any] = {"text": text, "model_id": model or "eleven_turbo_v2_5"}
     if speed and speed != 1:
@@ -208,11 +216,19 @@ def synthesize_elevenlabs(
         body,
         "ElevenLabs",
     )
-    return audio, "mp3", body["model_id"], voice_id
+    return {
+        "audio": audio,
+        "ext": "mp3",
+        "model": body["model_id"],
+        "voice": voice_id,
+        "generation_id": None,
+    }
 
 
-def _wav_header(data_length: int) -> bytes:
-    byte_rate = PCM_SAMPLE_RATE * PCM_CHANNELS * PCM_BIT_DEPTH // 8
+def _wav_header(
+    data_length: int, rate: int = PCM_SAMPLE_RATE, channels: int = PCM_CHANNELS
+) -> bytes:
+    byte_rate = rate * channels * PCM_BIT_DEPTH // 8
     return (
         b"RIFF"
         + struct.pack("<I", 36 + data_length)
@@ -221,10 +237,10 @@ def _wav_header(data_length: int) -> bytes:
             "<IHHIIHH",
             16,  # PCM chunk size
             1,  # format 1 = PCM
-            PCM_CHANNELS,
-            PCM_SAMPLE_RATE,
+            channels,
+            rate,
             byte_rate,
-            PCM_CHANNELS * PCM_BIT_DEPTH // 8,
+            channels * PCM_BIT_DEPTH // 8,
             PCM_BIT_DEPTH,
         )
         + b"data"
@@ -255,7 +271,16 @@ OPENROUTER_VOICES = {
     ],
     "x-ai/grok-voice-tts-1.0": ["Eve"],
     "hexgrad/kokoro-82m": ["af_heart", "af_bella", "am_michael"],
+    "canopylabs/orpheus-3b-0.1-ft": ["tara", "leah", "jess", "leo", "dan", "mia", "zac", "zoe"],
+    "sesame/csm-1b": ["conversational_a", "conversational_b", "read_speech_a"],
+    "minimax/speech-2.8-turbo": ["alloy"],
+    "minimax/speech-2.8-hd": ["alloy"],
 }
+
+# Vendors that reject the provider default and insist on mp3. Taken from their
+# own 400 messages; anything not listed is retried when the error names
+# response_format.
+OPENROUTER_NEEDS_MP3 = {"minimax/speech-2.8-turbo", "minimax/speech-2.8-hd"}
 
 
 def openrouter_default_voice(model: str) -> Optional[str]:
@@ -263,8 +288,23 @@ def openrouter_default_voice(model: str) -> Optional[str]:
     return voices[0] if voices else None
 
 
-def _identify(buffer: bytes) -> Tuple[bytes, str]:
-    """Work out what came back, wrapping bare PCM so it can play."""
+def _identify(buffer: bytes, content_type: str = "") -> Tuple[bytes, str]:
+    """Work out what came back, wrapping bare PCM so it can play.
+
+    The Content-Type is authoritative and carries the sample rate — guessing
+    24 kHz for a stream that is not 24 kHz plays it at the wrong pitch.
+    """
+    kind = (content_type or "").lower()
+
+    if "mpeg" in kind or "mp3" in kind:
+        return buffer, "mp3"
+    if "wav" in kind:
+        return buffer, "wav"
+    if "pcm" in kind:
+        rate = int(re.search(r"rate=(\d+)", kind).group(1)) if re.search(r"rate=(\d+)", kind) else PCM_SAMPLE_RATE
+        channels = int(re.search(r"channels=(\d+)", kind).group(1)) if re.search(r"channels=(\d+)", kind) else PCM_CHANNELS
+        return _wav_header(len(buffer), rate, channels) + buffer, "wav"
+
     if buffer[:4] == b"RIFF":
         return buffer, "wav"
     if buffer[:3] == b"ID3" or (len(buffer) > 1 and buffer[0] == 0xFF and buffer[1] & 0xE0 == 0xE0):
@@ -272,30 +312,15 @@ def _identify(buffer: bytes) -> Tuple[bytes, str]:
     return _wav_header(len(buffer)) + buffer, "wav"
 
 
-def synthesize_openrouter(
-    text: str,
-    api_key: str,
-    voice: Optional[str] = None,
-    model: Optional[str] = None,
-    speed: Optional[float] = None,
-) -> Tuple[bytes, str, str, str]:
-    chosen_model = model or OPENROUTER_DEFAULT_MODEL
-    chosen_voice = voice or openrouter_default_voice(chosen_model)
-
-    if not chosen_voice:
-        raise SystemExit(
-            f'saynow: model "{chosen_model}" needs an explicit voice — OpenRouter '
-            "rejects a request without one, and saynow has no verified voice list "
-            f"for it.\nPass one with: saynow -p openrouter -m {chosen_model} -v <voice> \"text\""
-        )
-
-    # response_format is deliberately omitted: support varies by vendor, so we
-    # take whatever comes back and identify it. One request for every model.
-    request = urllib.request.Request(
+def _openrouter_request(
+    api_key: str, model: str, text: str, voice: str, response_format: Optional[str]
+):
+    body: Dict[str, Any] = {"model": model, "input": text, "voice": voice}
+    if response_format:
+        body["response_format"] = response_format
+    return urllib.request.Request(
         OPENROUTER_SPEECH_ENDPOINT,
-        data=json.dumps(
-            {"model": chosen_model, "input": text, "voice": chosen_voice}
-        ).encode("utf-8"),
+        data=json.dumps(body).encode("utf-8"),
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -305,30 +330,86 @@ def synthesize_openrouter(
         method="POST",
     )
 
+
+def synthesize_openrouter(
+    text: str,
+    api_key: str,
+    voice: Optional[str] = None,
+    model: Optional[str] = None,
+    speed: Optional[float] = None,
+) -> Dict[str, Any]:
+    chosen_model = model or OPENROUTER_DEFAULT_MODEL
+    chosen_voice = voice or openrouter_default_voice(chosen_model)
+
+    if not chosen_voice:
+        raise SystemExit(
+            f'saynow: model "{chosen_model}" needs an explicit voice — OpenRouter '
+            "rejects a request without one, and saynow has no verified voice list "
+            f'for it.\nPass one with: saynow -p openrouter -m {chosen_model} -v <voice> "text"'
+        )
+
+    # Format support varies sharply: Gemini rejects every value, Deepgram
+    # returns WAV unasked, MiniMax and Mistral refuse anything but mp3. Send
+    # nothing unless the model is known to demand mp3, and retry once if the
+    # rejection names response_format.
+    fmt = "mp3" if chosen_model in OPENROUTER_NEEDS_MP3 else None
+
+    for attempt in (fmt, "mp3"):
+        try:
+            with urllib.request.urlopen(
+                _openrouter_request(api_key, chosen_model, text, chosen_voice, attempt)
+            ) as response:
+                raw = response.read()
+                content_type = response.headers.get("content-type", "")
+                generation_id = response.headers.get("x-generation-id")
+            audio, ext = _identify(raw, content_type)
+            return {
+                "audio": audio,
+                "ext": ext,
+                "model": chosen_model,
+                "voice": chosen_voice,
+                # Lets the caller look up what this cost, without delaying speech.
+                "generation_id": generation_id,
+            }
+        except urllib.error.HTTPError as err:
+            detail = err.read().decode("utf-8", "replace")[:300]
+            if err.code == 400 and "response_format" in detail and attempt != "mp3":
+                continue
+            if err.code == 401:
+                raise SystemExit(
+                    "saynow: OpenRouter rejected the API key (401). "
+                    "Check it with: saynow config list"
+                )
+            if err.code == 402:
+                raise SystemExit(f"saynow: OpenRouter is out of credit (402). {detail}")
+            if err.code == 400:
+                raise SystemExit(
+                    f"saynow: OpenRouter rejected {chosen_model} with voice "
+                    f'"{chosen_voice}" (400). Voice names are vendor-specific — run: '
+                    f"saynow voices -p openrouter -m {chosen_model}\n{detail}"
+                )
+            raise SystemExit(f"saynow: OpenRouter request failed ({err.code}). {detail}")
+        except urllib.error.URLError as err:
+            raise SystemExit(f"saynow: could not reach OpenRouter: {err.reason}")
+
+    raise SystemExit("saynow: OpenRouter rejected every response format tried.")
+
+
+def openrouter_lookup_cost(generation_id: str, api_key: str) -> Optional[float]:
+    """What one synthesis actually cost, in USD. None if undeterminable."""
+    if not generation_id or not api_key:
+        return None
+    request = urllib.request.Request(
+        f"https://openrouter.ai/api/v1/generation?id={urllib.parse.quote(generation_id)}",
+        headers={"Authorization": f"Bearer {api_key}"},
+    )
     try:
         with urllib.request.urlopen(request) as response:
-            raw = response.read()
-    except urllib.error.HTTPError as err:
-        detail = err.read().decode("utf-8", "replace")[:300]
-        if err.code == 401:
-            raise SystemExit(
-                "saynow: OpenRouter rejected the API key (401). "
-                "Check it with: saynow config list"
-            )
-        if err.code == 402:
-            raise SystemExit(f"saynow: OpenRouter is out of credit (402). {detail}")
-        if err.code == 400:
-            raise SystemExit(
-                f"saynow: OpenRouter rejected {chosen_model} with voice "
-                f'"{chosen_voice}" (400). Voice names are vendor-specific — run: '
-                f"saynow voices -p openrouter -m {chosen_model}\n{detail}"
-            )
-        raise SystemExit(f"saynow: OpenRouter request failed ({err.code}). {detail}")
-    except urllib.error.URLError as err:
-        raise SystemExit(f"saynow: could not reach OpenRouter: {err.reason}")
-
-    audio, ext = _identify(raw)
-    return audio, ext, chosen_model, chosen_voice
+            data = json.loads(response.read()).get("data") or {}
+    except (urllib.error.URLError, json.JSONDecodeError, OSError):
+        return None
+    cost = data.get("total_cost")
+    return float(cost) if isinstance(cost, (int, float)) else None
 
 
 def openrouter_audio_models() -> List[Dict[str, Any]]:

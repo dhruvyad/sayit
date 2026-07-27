@@ -299,7 +299,7 @@ async function modelsCommand() {
   );
 }
 
-function historyCommand([action, ...rest]) {
+async function historyCommand([action, ...rest]) {
   switch (action ?? 'list') {
     case 'path':
       return void console.log(history.HISTORY_DIR);
@@ -323,6 +323,16 @@ function historyCommand([action, ...rest]) {
     }
 
     case 'list': {
+      // Prices are looked up here rather than at synthesis time, so speaking
+      // is never delayed by a round trip just to learn what it cost.
+      const config = load();
+      const key = apiKey('openrouter', config);
+      if (key) {
+        await history.resolveCosts((genId) =>
+          providers.openrouter.lookupCost(genId, key),
+        );
+      }
+
       const entries = history.readIndex();
       if (!entries.length) {
         console.log('No archived clips yet.');
@@ -335,13 +345,17 @@ function historyCommand([action, ...rest]) {
         const when = entry.at.replace('T', ' ').slice(0, 16);
         const size = history.formatBytes(entry.bytes).padStart(8);
         const source = [entry.provider, entry.model, entry.voice].filter(Boolean).join(' / ');
-        console.log(`${String(i + 1).padStart(3)}. ${when}  ${size}  ${source}`);
+        const cost = entry.cost != null ? `$${entry.cost.toFixed(4)}` : '';
+        console.log(`${String(i + 1).padStart(3)}. ${when}  ${size}  ${cost.padStart(8)}  ${source}`);
         console.log(`     ${entry.text.replace(/\s+/g, ' ').slice(0, 88)}`);
       });
 
+      const spent = history.totalCost();
       console.log(
         `\n${entries.length} clip${entries.length === 1 ? '' : 's'}, ` +
-          `${history.formatBytes(history.usage())} in ${history.HISTORY_DIR}` +
+          `${history.formatBytes(history.usage())}` +
+          (spent ? `, $${spent.toFixed(4)} spent` : '') +
+          `\n${history.HISTORY_DIR}` +
           `\nPlay one with: saynow history open <n>`,
       );
       return;

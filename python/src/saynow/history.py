@@ -52,6 +52,7 @@ def record(
     provider: str,
     model: Optional[str] = None,
     voice: Optional[str] = None,
+    generation_id: Optional[str] = None,
     limit: int = DEFAULT_LIMIT,
 ) -> Optional[Dict[str, Any]]:
     """Archive one synthesis. Never raises: losing the archive must not stop
@@ -80,6 +81,10 @@ def record(
             "provider": provider,
             "model": model,
             "voice": voice,
+            # Resolved lazily by `saynow history` so synthesis is never delayed
+            # by a second round trip just to learn the price.
+            "generation_id": generation_id,
+            "cost": None,
             "text": text[:300] + "…" if len(text) > 300 else text,
         }
 
@@ -90,6 +95,32 @@ def record(
         return entry
     except OSError:
         return None
+
+
+def resolve_costs(lookup) -> int:
+    """Fill in prices for clips that have a generation id but no cost yet."""
+    entries = read_index()
+    pending = [e for e in entries if e.get("generation_id") and e.get("cost") is None]
+    if not pending:
+        return 0
+
+    resolved = 0
+    for entry in pending:
+        cost = lookup(entry["generation_id"])
+        if cost is not None:
+            entry["cost"] = cost
+            resolved += 1
+
+    if resolved:
+        try:
+            _write_index(entries)
+        except OSError:
+            pass  # a read-only archive is not worth failing over
+    return resolved
+
+
+def total_cost() -> float:
+    return sum(e.get("cost") or 0 for e in read_index())
 
 
 def clear() -> int:

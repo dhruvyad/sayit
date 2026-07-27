@@ -52,7 +52,13 @@ export async function speak(text, flags = {}) {
     return {};
   }
 
-  const { audio, ext, model: usedModel, voice: usedVoice } = await provider.synthesize(text, {
+  const {
+    audio,
+    ext,
+    model: usedModel,
+    voice: usedVoice,
+    generationId,
+  } = await provider.synthesize(text, {
     apiKey: key,
     voice: config.voice,
     model: config.model,
@@ -68,6 +74,7 @@ export async function speak(text, flags = {}) {
     provider: providerId,
     model: usedModel ?? config.model,
     voice: usedVoice ?? config.voice,
+    generationId,
     limit: config.historyLimit ?? history.DEFAULT_LIMIT,
   });
 

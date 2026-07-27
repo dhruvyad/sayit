@@ -39,7 +39,16 @@ function writeIndex(entries) {
  * Archive one synthesis. Returns the entry, or null when history is disabled.
  * Never throws: losing the archive must not stop saynow from speaking.
  */
-export function record({ audio, ext, text, provider, model, voice, limit = DEFAULT_LIMIT } = {}) {
+export function record({
+  audio,
+  ext,
+  text,
+  provider,
+  model,
+  voice,
+  generationId,
+  limit = DEFAULT_LIMIT,
+} = {}) {
   if (!limit || limit < 1 || !audio?.length) return null;
 
   try {
@@ -59,6 +68,10 @@ export function record({ audio, ext, text, provider, model, voice, limit = DEFAU
       provider,
       model: model ?? null,
       voice: voice ?? null,
+      // Resolved lazily by `saynow history` so synthesis is never delayed by
+      // a second round trip just to learn the price.
+      generationId: generationId ?? null,
+      cost: null,
       // Enough to recognise the clip without bloating the index with essays.
       text: text.length > 300 ? `${text.slice(0, 300)}…` : text,
     };
@@ -78,6 +91,41 @@ function prune(entries, limit) {
   for (const stale of entries.slice(limit)) {
     fs.rmSync(path.join(HISTORY_DIR, stale.file), { force: true });
   }
+}
+
+/**
+ * Fill in prices for clips that have a generation id but no cost yet, then
+ * persist. Returns how many were resolved.
+ */
+export async function resolveCosts(lookup) {
+  const entries = readIndex();
+  const pending = entries.filter((e) => e.generationId && e.cost == null);
+  if (!pending.length) return 0;
+
+  const results = await Promise.all(
+    pending.map((entry) => lookup(entry.generationId).catch(() => null)),
+  );
+
+  let resolved = 0;
+  pending.forEach((entry, i) => {
+    if (results[i] != null) {
+      entry.cost = results[i];
+      resolved += 1;
+    }
+  });
+
+  if (resolved) {
+    try {
+      writeIndex(entries);
+    } catch {
+      /* a read-only archive is not worth failing over */
+    }
+  }
+  return resolved;
+}
+
+export function totalCost() {
+  return readIndex().reduce((sum, e) => sum + (e.cost || 0), 0);
 }
 
 export function clear() {
