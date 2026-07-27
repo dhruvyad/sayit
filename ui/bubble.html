@@ -441,6 +441,14 @@
 
       const state = window.__SAYNOW__ || (document.body.classList.add('preview'), DEMO);
 
+      // Handed to the page in its own URL and returned on every request, so
+      // nothing else that can reach the port can answer on the user's behalf.
+      // Declared before anything that uses it: as a const it sits in the
+      // temporal dead zone until evaluated, and a reference from higher up
+      // throws, which would kill the script before any handler is bound.
+      const token = new URLSearchParams(location.search).get('t') ?? '';
+      const withToken = (path) => `${path}${path.includes('?') ? '&' : '?'}t=${token}`;
+
       const el = {
         bubble: document.getElementById('bubble'),
         transcript: document.getElementById('transcript'),
@@ -453,6 +461,26 @@
         sent: document.getElementById('sentNote'),
         label: document.getElementById('label'),
       };
+
+      /**
+       * Bound first, deliberately.
+       *
+       * Everything below can throw — a missing element, a bad URL, a browser
+       * without some API. If that happened after the close button was wired
+       * the bubble simply would not open; if it happened before, the user was
+       * left with a panel that ignored its own X and sat there until the CLI
+       * timed out two minutes later. So dismissal is wired before anything
+       * that could fail.
+       */
+      function emergencyClose() {
+        fetch(`/dismiss?t=${token}`, { method: 'POST' }).catch(() => {});
+        fetch(`/close?t=${token}`, { method: 'POST' }).catch(() => {});
+      }
+
+      el.close.addEventListener('click', emergencyClose, { once: false });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') emergencyClose();
+      });
 
       /* ---- transcript reveal --------------------------------------------- */
 
@@ -556,13 +584,13 @@
 
         const startChunk = () => {
           const chunk = state.chunks[index];
-          player = next ?? new Audio(`/audio/${index}`);
+          player = next ?? new Audio(withToken(`/audio/${index}`));
           next = null;
 
           // Warm the following clip while this one plays, so the join is not
           // audible as a gap.
           if (index + 1 < state.chunks.length) {
-            next = new Audio(`/audio/${index + 1}`);
+            next = new Audio(withToken(`/audio/${index + 1}`));
             next.preload = 'auto';
             next.load();
           }
@@ -591,7 +619,7 @@
         startChunk();
       } else if (state.hasAudio) {
         // The page owns playback, so the highlight and the sound cannot drift.
-        player = new Audio('/audio');
+        player = new Audio(withToken('/audio'));
         player.addEventListener('play', () => followAudio(player));
         player.addEventListener('ended', () => {
           audioEnded = true;
@@ -609,7 +637,7 @@
       } else {
         followEstimate();
         if (window.__SAYNOW__) {
-          const events = new EventSource('/events');
+          const events = new EventSource(withToken('/events'));
           events.addEventListener('ended', () => {
             audioEnded = true;
             // Audio finished before the estimate caught up: snap it to done.
@@ -671,7 +699,12 @@
       const post = (path, body) =>
         fetch(path, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            // A custom header forces a preflight on any cross-origin attempt,
+            // which this server never answers.
+            'X-Saynow-Token': token,
+          },
           body: JSON.stringify(body || {}),
         }).catch(() => {});
 

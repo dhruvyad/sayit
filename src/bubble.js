@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -59,6 +59,26 @@ export async function showBubble({
   };
   const page = renderPage(state);
 
+  /**
+   * A secret for this bubble only.
+   *
+   * The server listens on loopback with no other authentication, and POST
+   * /reply is what an agent reads as your answer — so anything able to reach
+   * the port could answer on your behalf and the agent would act on it. The
+   * page is served the token and hands it back; nothing else knows it.
+   */
+  const token = randomBytes(24).toString('hex');
+
+  const authorised = (req) => {
+    const supplied =
+      req.headers['x-saynow-token'] ||
+      new URL(req.url ?? '/', 'http://localhost').searchParams.get('t') ||
+      '';
+    const a = Buffer.from(String(supplied));
+    const b = Buffer.from(token);
+    return a.length === b.length && timingSafeEqual(a, b);
+  };
+
   let settle;
   const answered = new Promise((resolve) => (settle = resolve));
 
@@ -71,9 +91,15 @@ export async function showBubble({
   };
 
   const server = http.createServer((req, res) => {
+    if (!authorised(req)) {
+      res.writeHead(403).end();
+      return;
+    }
+
+    const route = (req.url ?? '/').split('?')[0];
     // /audio/<n> blocks until that chunk is rendered, which is what lets the
     // page ask for the next one before it exists.
-    const chunkMatch = req.method === 'GET' && /^\/audio\/(\d+)$/.exec(req.url || '');
+    const chunkMatch = req.method === 'GET' && /^\/audio\/(\d+)$/.exec(route);
     if (chunkMatch && chunks) {
       const index = Number(chunkMatch[1]);
       prefetch(chunks, pending, index + 1);
@@ -94,7 +120,7 @@ export async function showBubble({
       return;
     }
 
-    if (req.method === 'GET' && req.url === '/audio' && audio) {
+    if (req.method === 'GET' && route === '/audio' && audio) {
       res.writeHead(200, {
         'Content-Type': audioType || 'audio/wav',
         'Content-Length': audio.length,
@@ -105,7 +131,7 @@ export async function showBubble({
       return;
     }
 
-    if (req.method === 'GET' && req.url === '/events') {
+    if (req.method === 'GET' && route === '/events') {
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-store',
@@ -128,7 +154,7 @@ export async function showBubble({
 
     readJson(req).then((body) => {
       res.writeHead(204).end();
-      switch (req.url) {
+      switch (route) {
         case '/stop':
           onStop?.();
           break;
@@ -146,7 +172,7 @@ export async function showBubble({
   });
 
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${server.address().port}/`;
+  const url = `http://127.0.0.1:${server.address().port}/?t=${token}`;
 
   const window = openWindow(url);
   const guard = setTimeout(() => settle({ reason: 'dismiss' }), timeoutMs);

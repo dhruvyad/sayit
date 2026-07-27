@@ -141,6 +141,13 @@ THE BUBBLE
   half-heard is still readable. Pass --no-ui to suppress it, or --quiet to
   keep it while silencing stderr.
 
+  It stays while you are with it — hovering, scrolling or typing holds it
+  open, and the countdown resumes a moment after you leave. Anything typed
+  keeps it until you send or dismiss it.
+
+  The bubble talks to saynow over a loopback server that is authenticated per
+  message, so nothing else on the machine can answer a question on your behalf.
+
   On macOS it is a floating panel: no dock icon, no entry in the app switcher,
   and it does not steal focus from what you are doing. Elsewhere it falls back
   to a Chromium app window, which looks the same but has a title bar. With
