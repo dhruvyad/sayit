@@ -70,6 +70,8 @@ CONFIGURATION
     SAYNOW_MODEL       same values as --model
     SAYNOW_SPEED       same values as --speed
     SAYNOW_CONFIG_DIR  override the config directory
+    SAYNOW_LOCK_PATH   override the playback lock file, giving this process
+                       its own queue instead of the machine-wide one
     OPENAI_API_KEY, ELEVENLABS_API_KEY, OPENROUTER_API_KEY
 
   API keys are deliberately not accepted as flags: argv is visible to ps and
@@ -81,7 +83,11 @@ BEHAVIOUR
              0. An agent reporting success to someone who heard nothing is
              worse than a robotic voice. Use --strict to make it an error.
   Queueing   Concurrent saynow processes serialise through a lock file, so
-             three calls produce three sentences rather than one muddle.
+             three calls produce three sentences rather than one muddle. The
+             queue is machine-wide and shared by the npm and pip builds, so
+             agents in different projects still take turns. A lock whose
+             owner has died, or which is older than five minutes, is
+             reclaimed automatically.
   Stdin      With no text arguments and stdin not a terminal, saynow reads
              the text from stdin.
   Literals   To speak a word that is also a command name, pipe it instead:

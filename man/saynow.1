@@ -1,4 +1,4 @@
-.TH SAYNOW 1 "2026-07-27" "saynow 0.2.0" "User Commands"
+.TH SAYNOW 1 "2026-07-27" "saynow 0.3.0" "User Commands"
 .SH NAME
 saynow \- speak text aloud from the terminal
 .SH SYNOPSIS
@@ -136,6 +136,10 @@ Equivalent to the matching command\-line flags.
 .TP
 .B SAYNOW_CONFIG_DIR
 Override the directory holding \fIconfig.json\fR.
+.TP
+.B SAYNOW_LOCK_PATH
+Override the playback lock file, giving this process its own queue instead of
+the machine\-wide one.
 .TP
 .BR OPENAI_API_KEY ", " ELEVENLABS_API_KEY ", " OPENROUTER_API_KEY
 Provider credentials. These take precedence over the config file.

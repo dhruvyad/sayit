@@ -23,7 +23,12 @@ PLAYERS = {
     ],
 }
 
-LOCK_PATH = Path(tempfile.gettempdir()) / "saynow.lock"
+# One lock per machine by default, so every saynow process shares a queue
+# regardless of whether it came from npm or pip. Override to give a project
+# or test its own independent queue.
+LOCK_PATH = Path(
+    os.environ.get("SAYNOW_LOCK_PATH") or Path(tempfile.gettempdir()) / "saynow.lock"
+)
 STALE_SECONDS = 300
 
 

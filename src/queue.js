@@ -2,7 +2,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const LOCK_PATH = path.join(os.tmpdir(), 'saynow.lock');
+/**
+ * One lock per machine by default, so every saynow process shares a queue
+ * regardless of whether it came from npm or pip. Override to give a project
+ * or test its own independent queue.
+ */
+const LOCK_PATH =
+  process.env.SAYNOW_LOCK_PATH || path.join(os.tmpdir(), 'saynow.lock');
 const POLL_MS = 60;
 const STALE_MS = 5 * 60 * 1000;
 
