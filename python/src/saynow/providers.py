@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
 import shutil
 import struct
@@ -12,6 +13,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .catalog import cached_voices, default_voice as catalog_default_voice, voices_for, catalog
@@ -114,6 +116,48 @@ def speak_system(text: str, voice: Optional[str] = None, rate: Optional[float] =
         )
     if result.returncode != 0:
         raise SystemExit(f"saynow: {cmd[0]} exited with code {result.returncode}")
+
+
+def synthesize_system(
+    text: str, voice: Optional[str] = None, rate: Optional[float] = None
+) -> Optional[Tuple[bytes, str]]:
+    """Render the system voice to a WAV the caller can play itself.
+
+    Not slower than speaking: `say -o` synthesises without playing in real
+    time. It exists so the bubble can drive the transcript from the audio's
+    own clock rather than a words-per-minute guess.
+    """
+    import tempfile
+
+    path = Path(tempfile.gettempdir()) / f"saynow-sys-{os.getpid()}.wav"
+    try:
+        if sys.platform == "darwin":
+            cmd = ["say"]
+            if voice:
+                cmd += ["-v", voice]
+            if rate:
+                cmd += ["-r", str(int(rate))]
+            cmd += ["-o", str(path), "--data-format=LEI16@22050", "--", text]
+        elif sys.platform.startswith("linux"):
+            binary = "espeak-ng" if shutil.which("espeak-ng") else "espeak"
+            cmd = [binary]
+            if voice:
+                cmd += ["-v", voice]
+            if rate:
+                cmd += ["-s", str(int(rate))]
+            cmd += ["-w", str(path), "--", text]
+        else:
+            return None
+
+        result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if result.returncode != 0:
+            return None
+        data = path.read_bytes()
+        return (data, "wav") if len(data) > 44 else None
+    except (OSError, ValueError):
+        return None
+    finally:
+        path.unlink(missing_ok=True)
 
 
 def system_voices() -> List[Tuple[str, str, str]]:

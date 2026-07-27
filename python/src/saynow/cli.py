@@ -7,10 +7,11 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from . import __version__, config as cfg, history, markdown, providers
+from . import __version__, config as cfg, bubble, history, markdown, providers
 from .audio import play, queued
 
 SUBCOMMANDS = {"init", "config", "voices", "models", "history", "app", "help"}
@@ -47,17 +48,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-m", "--model", help="model id (see: saynow models)")
     parser.add_argument(
         "--from", dest="sender", metavar="NAME",
-        help="who is speaking, shown in the bubble (npm build only)"
+        help="who is speaking, shown in the bubble header"
     )
     parser.add_argument(
         "--file", metavar="PATH",
-        help="show a Markdown file in the bubble (npm build only)"
+        help="render a Markdown file in the bubble"
     )
     parser.add_argument("-r", "--rate", type=float, help="words per minute (system provider)")
     parser.add_argument("-s", "--speed", type=float, help="speed 0.25-4.0 (cloud providers)")
     parser.add_argument("--save", metavar="FILE", help="write audio to a file instead of playing")
     parser.add_argument(
-        "--ask", action="store_true", help="show a reply bubble and wait (npm build only)"
+        "--ask", action="store_true", help="show a reply box and wait for an answer"
     )
     parser.add_argument(
         "--no-ui", action="store_true", help="speak without showing the bubble"
@@ -95,32 +96,27 @@ def main(argv: Optional[List[str]] = None) -> int:
         if command == "app":
             return app_command()
 
-    # --file supplies the document. This build cannot show it — the bubble is
-    # in the npm build — but it can read it, and silently ignoring the flag
-    # would leave a caller believing a report had been delivered.
+    # --file supplies the document: rendered in the bubble, with its spoken
+    # form used as the sentence when no text is given.
     document = None
     if args.file:
         try:
-            document = markdown.speech(Path(args.file).read_text(encoding="utf-8"))
+            source = Path(args.file).read_text(encoding="utf-8")
         except OSError as err:
             raise SystemExit(f"saynow: could not read {args.file}: {err}")
-        if not args.quiet:
-            print(
-                "saynow: showing a document needs the npm build; reading it aloud instead.",
-                file=sys.stderr,
-            )
+        document = {
+            "markdown": source,
+            "dir": Path(args.file).resolve().parent,
+            "speech": markdown.speech(source),
+        }
 
-    if args.sender and not args.quiet:
-        print(
-            "saynow: --from names the sender in the bubble, which needs the npm build.",
-            file=sys.stderr,
-        )
-
-    text = " ".join(args.text) if args.text else (document or read_stdin())
+    text = " ".join(args.text) if args.text else (
+        document["speech"] if document else read_stdin()
+    )
     if not text.strip():
         parser.error("nothing to say. Pass text as an argument or pipe it on stdin.")
 
-    return speak(text.strip(), args)
+    return speak(text.strip(), args, document)
 
 
 def read_stdin() -> str:
@@ -129,7 +125,7 @@ def read_stdin() -> str:
     return sys.stdin.read()
 
 
-def speak(text: str, args: argparse.Namespace) -> int:
+def speak(text: str, args: argparse.Namespace, document=None) -> int:
     """Always make a sound: degrade to the offline voice rather than failing."""
     if args.ask and args.save:
         raise SystemExit("saynow: --ask and --save cannot be combined.")
@@ -153,52 +149,105 @@ def speak(text: str, args: argparse.Namespace) -> int:
         )
         provider_id, key = "system", None
 
+    # --save writes a file and plays nothing, so there is nothing to narrate.
+    wants_ui = not args.no_ui and not args.save
+    shell = bubble.available() if wants_ui else None
+
+    if wants_ui and not shell and args.ask:
+        warn(
+            args,
+            "no window shell available, so --ask can only speak. Install a "
+            "Chromium-based browser, or Xcode command line tools on macOS.",
+        )
+
     if provider_id == "system":
         if args.save:
             raise SystemExit(
                 "saynow: --save is not supported by the system provider. "
                 "Configure openai or elevenlabs to write audio files."
             )
-        with queued(enabled=not args.no_queue):
-            providers.speak_system(text, voice=config.get("voice"), rate=args.rate)
+        # With a bubble the page plays the audio, so ask the system voice for
+        # bytes instead of sound and the transcript can follow its clock.
+        if not shell:
+            with queued(enabled=not args.no_queue):
+                providers.speak_system(text, voice=config.get("voice"), rate=args.rate)
+            return 2 if args.ask else 0
+
+        rendered = providers.synthesize_system(
+            text, voice=config.get("voice"), rate=args.rate
+        )
+        if rendered:
+            audio, ext = rendered
+        else:
+            # The voice would not write a file, so speak alongside the bubble
+            # instead. The transcript falls back to its words-per-minute
+            # estimate, which is worse than the audio clock but not silent.
+            audio, ext = None, "wav"
+            threading.Thread(
+                target=providers.speak_system,
+                args=(text,),
+                kwargs={"voice": config.get("voice"), "rate": args.rate},
+                daemon=True,
+            ).start()
+    else:
+        result = providers.SYNTHESIZERS[provider_id](
+            text,
+            api_key=key,
+            voice=config.get("voice"),
+            model=config.get("model"),
+            speed=config.get("speed"),
+        )
+        audio, ext = result["audio"], result["ext"]
+
+        # Archive before playing: a long article is expensive to regenerate.
+        history.record(
+            audio=audio,
+            ext=ext,
+            text=text,
+            provider=provider_id,
+            model=result["model"],
+            voice=result["voice"],
+            generation_id=result.get("generation_id"),
+            limit=int(config.get("historyLimit") or history.DEFAULT_LIMIT),
+        )
+
+        if args.save:
+            Path(args.save).write_bytes(audio)
+            if not args.quiet:
+                print(os.path.abspath(args.save))
+            return 0
+
+    if not shell:
+        tmp = Path(tempfile.gettempdir()) / f"saynow-{os.getpid()}.{ext}"
+        tmp.write_bytes(audio)
+        os.chmod(tmp, 0o600)
+        try:
+            with queued(enabled=not args.no_queue):
+                play(str(tmp))
+        finally:
+            tmp.unlink(missing_ok=True)
+        return 2 if args.ask else 0
+
+    # Serialise around the whole bubble: playback happens in the page now, so
+    # the queue can no longer wrap a child process.
+    with queued(enabled=not args.no_queue):
+        answer = bubble.show_bubble(
+            text=text,
+            ask=bool(args.ask),
+            sender=args.sender,
+            audio=audio,
+            audio_ext=ext,
+            document=document,
+            rate=args.rate,
+        )
+
+    if not args.ask:
         return 0
-
-    result = providers.SYNTHESIZERS[provider_id](
-        text,
-        api_key=key,
-        voice=config.get("voice"),
-        model=config.get("model"),
-        speed=config.get("speed"),
-    )
-    audio, ext = result["audio"], result["ext"]
-
-    # Archive before playing: a long article is expensive to regenerate.
-    history.record(
-        audio=audio,
-        ext=ext,
-        text=text,
-        provider=provider_id,
-        model=result["model"],
-        voice=result["voice"],
-        generation_id=result.get("generation_id"),
-        limit=int(config.get("historyLimit") or history.DEFAULT_LIMIT),
-    )
-
-    if args.save:
-        Path(args.save).write_bytes(audio)
-        if not args.quiet:
-            print(os.path.abspath(args.save))
+    if answer.get("reason") == "reply" and answer.get("text"):
+        print(answer["text"])
         return 0
-
-    tmp = Path(tempfile.gettempdir()) / f"saynow-{os.getpid()}.{ext}"
-    tmp.write_bytes(audio)
-    os.chmod(tmp, 0o600)
-    try:
-        with queued(enabled=not args.no_queue):
-            play(str(tmp))
-    finally:
-        tmp.unlink(missing_ok=True)
-    return 0
+    # Dismissed or away. Never read as consent.
+    return 2
 
 
 def init_command() -> int:

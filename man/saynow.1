@@ -248,6 +248,12 @@ The
 provider cannot write files, so it rejects \fB\-\-save\fR.
 .PP
 Windows support is best\-effort and less tested than macOS and Linux.
+.PP
+The bubble needs a window shell: Xcode command line tools on macOS, or a
+Chromium\-based browser anywhere. Without one
+.B saynow
+still speaks, but \fB\-\-ask\fR exits 2 immediately and \fB\-\-file\fR is read
+aloud rather than shown.
 .SH EXAMPLES
 Speak a sentence with the offline system voice:
 .PP

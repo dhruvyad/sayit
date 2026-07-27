@@ -70,16 +70,22 @@ progress, or an error that needs attention. Keep it to one short sentence —
 it is spoken aloud, not read. Do not narrate routine progress.
 ```
 
-## What needs the npm build
+## Asking, and showing
 
-The floating bubble lives in the npm build, and everything drawn in it needs
-that build too:
+`--ask` speaks, then waits: a bubble appears in the corner with the
+transcript and a reply box, and whatever is typed comes back on stdout.
 
-| Flag | Here | With `npm install -g saynow` |
-| --- | --- | --- |
-| `--ask` | speaks, exits 2 | shows a reply box and returns the answer |
-| `--file` | reads the document aloud | renders it — tables, code, images |
-| `--from` | ignored, with a note on stderr | names the sender in the header |
+```bash
+answer=$(saynow --from "billing · migration" --ask "Drop the old table?")
+```
+
+Exit `0` means they answered, `2` means they dismissed it or were away —
+never read `2` as consent. `--file report.md` renders a Markdown document in
+the same bubble: headings, tables, code, links and images, local or remote.
+
+The bubble needs a window shell — Xcode command line tools on macOS, or any
+Chromium-based browser. Without one saynow still speaks, `--ask` exits 2, and
+`--file` is read aloud rather than shown.
 
 Both builds read the same config file, so installing the npm one alongside
 this changes nothing you have already set up.
