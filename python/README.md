@@ -1,4 +1,8 @@
-# saynow
+<p align="center">
+  <img src="https://raw.githubusercontent.com/dhruvyad/saynow/main/docs/logo.png" alt="" width="88">
+</p>
+
+<h1 align="center">saynow</h1>
 
 <p align="center">
   <a href="https://pypi.org/project/saynow/"><img alt="PyPI" src="https://img.shields.io/pypi/v/saynow?logo=pypi&logoColor=white&label=pypi&color=3775a9"></a>

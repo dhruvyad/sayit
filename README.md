@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/dhruvyad/saynow/main/docs/logo.png" alt="" width="104">
+</p>
+
 <h1 align="center">saynow</h1>
 
 <p align="center">
@@ -13,16 +17,16 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/dhruvyad/saynow/main/docs/bubble-ask.png" alt="saynow bubble showing a spoken transcript with a reply box" width="720">
+  <img src="https://raw.githubusercontent.com/dhruvyad/saynow/main/docs/bubble-ask.png" alt="saynow speaking, with a transcript and a reply box" width="680">
 </p>
 
 ```bash
 saynow "the build finished, 42 tests passed"
 ```
 
-It speaks, and shows a bubble in the corner with the transcript lit word by word —
-so a sentence you half-heard is still readable. Works with no configuration at
-all, falling back to your OS's built-in voice: offline, free, no API key.
+It speaks, and shows a bubble in the corner with the transcript lit word by
+word — so a sentence you half-heard is still readable. Works with no
+configuration, falling back to your OS's built-in voice: offline, free, no key.
 
 ## Install
 
@@ -31,22 +35,19 @@ npm install -g saynow     # Node >= 18
 pip install saynow        # Python >= 3.9
 ```
 
-Same CLI, same config file, zero dependencies either way — pick whichever
-runtime you already have. Or skip installing: `npx saynow "hello"`.
+Same CLI, same config file, zero dependencies either way. On macOS this also
+installs the [settings app](#settings-app); set `SAYNOW_NO_APP=1` to skip it.
+To try it without installing: `npx saynow "hello"`.
 
-## Ask a question and wait for the answer
+## Ask, and wait for the answer
 
 ```bash
 answer=$(saynow --ask "Should I drop the old table?")
 ```
 
-Speaks, shows a reply box, and blocks. The reply goes to stdout; exit `0` means
-they answered, exit `2` means nobody was there. That distinction is the point —
-an agent can tell "they said no" apart from "they were away from the desk".
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/dhruvyad/saynow/main/docs/bubble-speak.png" alt="saynow bubble while speaking, without a reply box" width="720">
-</p>
+Speaks, shows a reply box, and blocks. The reply goes to stdout. Exit `0` means
+they answered, exit `2` means nobody was there — so an agent can tell "they said
+no" from "they were away from the desk".
 
 ## Usage
 
@@ -54,7 +55,7 @@ an agent can tell "they said no" apart from "they were away from the desk".
 saynow "text to speak"              # speak an argument
 echo "text" | saynow                # speak stdin
 npm test 2>&1 | tail -1 | saynow    # speak a command's last line
-saynow -p openai -v nova "hello"    # pick a provider and voice
+saynow -p openrouter -v Kore "hi"   # pick a provider and voice
 saynow --no-ui "hello"              # speak without the bubble
 saynow --save note.mp3 "hello"      # write a file instead of playing
 ```
@@ -64,43 +65,41 @@ saynow --save note.mp3 "hello"      # write a file instead of playing
 | `system` | Fair | Nothing — built into the OS |
 | `openai` | Good | `OPENAI_API_KEY` |
 | `elevenlabs` | Best | `ELEVENLABS_API_KEY` |
-| `openrouter` | **Best** | `OPENROUTER_API_KEY` — 15+ speech models behind one key |
+| `openrouter` | **Best** | `OPENROUTER_API_KEY` — 15 speech models, 245 voices |
 
-If a cloud provider is configured but its key is missing, saynow warns on stderr
-and speaks with the system voice anyway — an agent reporting "done" to someone
-who heard nothing is worse than a robotic voice. Use `--strict` to opt out.
-Concurrent calls are serialized machine-wide, so three agents speaking at once
-produce three sentences rather than one muddle.
-
-## Configure
-
-```bash
-saynow init                                    # interactive setup
-saynow config set provider openrouter
-saynow models                                  # speech models, with prices
-saynow voices -p openrouter -m deepgram/aura-2 # that model's voices
-```
-
-`saynow models` lists every OpenRouter speech model — Google, xAI, Deepgram,
-MiniMax, Qwen, Kokoro and others — with the price of each, loaded live.
+If a provider is configured but its key is missing, saynow warns on stderr and
+speaks with the system voice anyway: an agent reporting "done" to someone who
+heard nothing is worse than a robotic voice. `--strict` opts out. Concurrent
+calls are serialized machine-wide, so three agents produce three sentences
+rather than one muddle.
 
 ## Keep what you synthesised
 
 Reading a long article costs money and seconds, so every cloud synthesis is
-archived rather than thrown away:
+archived with its duration and what it cost:
 
 ```bash
-saynow history            # newest first, with size and model
+saynow history            # newest first
 saynow history open 3     # play one back
-saynow history path       # the directory, to share a file from it
+saynow history path       # to share a file from it
 ```
 
-The newest 50 are kept — `saynow config set historyLimit <n>` to change it, or
-`0` to archive nothing.
+The newest 50 are kept — `saynow config set historyLimit <n>`, or `0` for none.
 
-Config lives at `~/.config/saynow/config.json`, mode `0600`. Precedence is
-defaults → config file → environment → flags. API keys are never accepted as
-flags, since argv is visible to `ps` and lands in shell history.
+## Settings app
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/dhruvyad/saynow/main/docs/app.png" alt="the saynow settings app" width="620">
+</p>
+
+macOS only, installed alongside the CLI. Picks a model from the live catalogue
+with prices, stores keys, and browses, plays and prices the archive. It compiles
+from source during install, so it needs the Xcode command line tools
+(`xcode-select --install`); without them the install skips it and says so, and
+`saynow app install` adds it later.
+
+It is a separate process from the CLI — they meet only at
+`~/.config/saynow/config.json`, so either works without the other.
 
 ## Use it from an agent
 
@@ -114,45 +113,21 @@ blocks progress, or an error that needs attention. Keep it to one short
 sentence — it is spoken aloud, not read. Do not narrate routine progress.
 ```
 
-## Settings app
-
-A small macOS app for the things a flag is a clumsy way to set — picking a
-model from the live OpenRouter catalogue, storing keys, and browsing what you
-have already synthesised.
-
-On macOS, `npm install -g saynow` installs the app as well — there is no second
-command to run. It compiles during the install, so it needs the Xcode command
-line tools (`xcode-select --install`); without them the install skips it and
-tells you. To opt out, or to add it later:
-
-```bash
-SAYNOW_NO_APP=1 npm install -g saynow    # command line tool only
-saynow app install                       # add the app any time
-```
-
-It ships as source rather than a prebuilt binary because a prebuilt app needs a
-Developer ID and notarisation to run on anyone else's machine.
-
-It is a separate process from the CLI and they meet only at
-`~/.config/saynow/config.json`, so either works without the other. Building it
-needs the Xcode command line tools; there is no Xcode project, just `swiftc`
-and an `Info.plist`.
-
 ## How the bubble works
 
-On macOS it's a borderless `NSPanel` hosting a `WKWebView`: no Dock icon, no
-entry in the app switcher, and it never steals focus from what you're doing. It
-compiles from [`shell/SaynowPanel.swift`](shell/SaynowPanel.swift) on first use
-and caches the binary — **about 84 KB**, because it borrows the system's WebKit
-instead of shipping a browser. Elsewhere it falls back to a Chromium app window
-loading the identical page, and with neither available saynow just speaks.
+On macOS it is a borderless `NSPanel` hosting a `WKWebView`: no Dock icon, no
+entry in the app switcher, and it never steals focus. It compiles from
+[`shell/SaynowPanel.swift`](shell/SaynowPanel.swift) on first use and caches the
+binary — **about 84 KB**, because it borrows the system WebKit instead of
+shipping a browser. Elsewhere it falls back to a Chromium app window loading the
+identical page, and with neither available saynow just speaks.
 
-All of the UI is one file, [`ui/bubble.html`](ui/bubble.html).
+All of the bubble is one file, [`ui/bubble.html`](ui/bubble.html).
 
-## Full reference
+## Reference
 
 ```bash
-saynow --help    # every flag, setting, and exit code
+saynow --help    # every flag, setting and exit code
 man saynow       # the same, as a man page
 ```
 
