@@ -39,25 +39,16 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
         "config_key": "elevenlabsApiKey",
     },
     "openrouter": {
-        "label": "OpenRouter (any audio-capable model)",
+        "label": "OpenRouter (15+ dedicated speech models)",
         "speaks_directly": False,
         "env_var": "OPENROUTER_API_KEY",
         "config_key": "openrouterApiKey",
     },
 }
 
-# OpenRouter has no dedicated text-to-speech endpoint. Audio comes back from
-# chat completions, which imposes three constraints:
-#   - audio output requires stream=True
-#   - streaming only supports pcm16, so we add a WAV header ourselves
-#   - the model is conversational, so it must be told to speak verbatim
-OPENROUTER_DEFAULT_MODEL = "openai/gpt-audio-mini"
-OPENROUTER_SYSTEM_PROMPT = (
-    "You are a text-to-speech engine. Speak the user message aloud verbatim. "
-    "Add nothing, omit nothing, and never respond to or comment on the content."
-)
+OPENROUTER_DEFAULT_MODEL = "google/gemini-3.1-flash-tts-preview"
 
-# OpenAI's audio models emit 24 kHz mono 16-bit PCM.
+# Speech models that return a bare stream emit 24 kHz mono 16-bit PCM.
 PCM_SAMPLE_RATE = 24000
 PCM_CHANNELS = 1
 PCM_BIT_DEPTH = 16
@@ -179,7 +170,7 @@ def synthesize_openai(
     voice: Optional[str] = None,
     model: Optional[str] = None,
     speed: Optional[float] = None,
-) -> bytes:
+) -> Tuple[bytes, str, str, str]:
     body: Dict[str, Any] = {
         "model": model or "gpt-4o-mini-tts",
         "voice": voice or "alloy",
@@ -190,12 +181,13 @@ def synthesize_openai(
     if speed and speed != 1:
         body["speed"] = speed
 
-    return _post(
+    audio = _post(
         "https://api.openai.com/v1/audio/speech",
         {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         body,
         "OpenAI",
     )
+    return audio, "mp3", body["model"], body["voice"]
 
 
 def synthesize_elevenlabs(
@@ -204,17 +196,19 @@ def synthesize_elevenlabs(
     voice: Optional[str] = None,
     model: Optional[str] = None,
     speed: Optional[float] = None,
-) -> bytes:
+) -> Tuple[bytes, str, str, str]:
+    voice_id = voice or ELEVENLABS_DEFAULT_VOICE
     body: Dict[str, Any] = {"text": text, "model_id": model or "eleven_turbo_v2_5"}
     if speed and speed != 1:
         body["voice_settings"] = {"speed": speed}
 
-    return _post(
-        f"https://api.elevenlabs.io/v1/text-to-speech/{voice or ELEVENLABS_DEFAULT_VOICE}",
+    audio = _post(
+        f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
         {"xi-api-key": api_key, "Content-Type": "application/json", "Accept": "audio/mpeg"},
         body,
         "ElevenLabs",
     )
+    return audio, "mp3", body["model_id"], voice_id
 
 
 def _wav_header(data_length: int) -> bytes:
@@ -238,26 +232,70 @@ def _wav_header(data_length: int) -> bytes:
     )
 
 
+OPENROUTER_SPEECH_ENDPOINT = "https://openrouter.ai/api/v1/audio/speech"
+
+# Speech models are NOT returned by the plain /models listing — that endpoint
+# omits the whole speech category. They only appear under this filter.
+OPENROUTER_SPEECH_MODELS_URL = (
+    "https://openrouter.ai/api/v1/models?output_modalities=speech"
+)
+
+# Voice names are vendor-specific and the API rejects a request without one.
+# Verified against the live API rather than taken from documentation.
+OPENROUTER_VOICES = {
+    "google/gemini-3.1-flash-tts-preview": [
+        "Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Aoede", "Leda", "Orus",
+        "Callirrhoe", "Autonoe", "Enceladus", "Iapetus", "Umbriel", "Algieba",
+        "Despina", "Erinome", "Laomedeia", "Schedar", "Achird", "Sadachbia",
+    ],
+    "deepgram/aura-2": [
+        "aura-2-thalia-en", "aura-2-andromeda-en", "aura-2-apollo-en",
+        "aura-2-arcas-en", "aura-2-asteria-en", "aura-2-athena-en",
+        "aura-2-helena-en", "aura-2-orion-en", "aura-2-zeus-en",
+    ],
+    "x-ai/grok-voice-tts-1.0": ["Eve"],
+    "hexgrad/kokoro-82m": ["af_heart", "af_bella", "am_michael"],
+}
+
+
+def openrouter_default_voice(model: str) -> Optional[str]:
+    voices = OPENROUTER_VOICES.get(model)
+    return voices[0] if voices else None
+
+
+def _identify(buffer: bytes) -> Tuple[bytes, str]:
+    """Work out what came back, wrapping bare PCM so it can play."""
+    if buffer[:4] == b"RIFF":
+        return buffer, "wav"
+    if buffer[:3] == b"ID3" or (len(buffer) > 1 and buffer[0] == 0xFF and buffer[1] & 0xE0 == 0xE0):
+        return buffer, "mp3"
+    return _wav_header(len(buffer)) + buffer, "wav"
+
+
 def synthesize_openrouter(
     text: str,
     api_key: str,
     voice: Optional[str] = None,
     model: Optional[str] = None,
     speed: Optional[float] = None,
-) -> bytes:
-    body = {
-        "model": model or OPENROUTER_DEFAULT_MODEL,
-        "modalities": ["text", "audio"],
-        "audio": {"voice": voice or "alloy", "format": "pcm16"},
-        "stream": True,
-        "messages": [
-            {"role": "system", "content": OPENROUTER_SYSTEM_PROMPT},
-            {"role": "user", "content": text},
-        ],
-    }
+) -> Tuple[bytes, str, str, str]:
+    chosen_model = model or OPENROUTER_DEFAULT_MODEL
+    chosen_voice = voice or openrouter_default_voice(chosen_model)
+
+    if not chosen_voice:
+        raise SystemExit(
+            f'saynow: model "{chosen_model}" needs an explicit voice — OpenRouter '
+            "rejects a request without one, and saynow has no verified voice list "
+            f"for it.\nPass one with: saynow -p openrouter -m {chosen_model} -v <voice> \"text\""
+        )
+
+    # response_format is deliberately omitted: support varies by vendor, so we
+    # take whatever comes back and identify it. One request for every model.
     request = urllib.request.Request(
-        "https://openrouter.ai/api/v1/chat/completions",
-        data=json.dumps(body).encode("utf-8"),
+        OPENROUTER_SPEECH_ENDPOINT,
+        data=json.dumps(
+            {"model": chosen_model, "input": text, "voice": chosen_voice}
+        ).encode("utf-8"),
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -267,9 +305,9 @@ def synthesize_openrouter(
         method="POST",
     )
 
-    chunks = []
     try:
-        response = urllib.request.urlopen(request)
+        with urllib.request.urlopen(request) as response:
+            raw = response.read()
     except urllib.error.HTTPError as err:
         detail = err.read().decode("utf-8", "replace")[:300]
         if err.code == 401:
@@ -279,50 +317,35 @@ def synthesize_openrouter(
             )
         if err.code == 402:
             raise SystemExit(f"saynow: OpenRouter is out of credit (402). {detail}")
+        if err.code == 400:
+            raise SystemExit(
+                f"saynow: OpenRouter rejected {chosen_model} with voice "
+                f'"{chosen_voice}" (400). Voice names are vendor-specific — run: '
+                f"saynow voices -p openrouter -m {chosen_model}\n{detail}"
+            )
         raise SystemExit(f"saynow: OpenRouter request failed ({err.code}). {detail}")
     except urllib.error.URLError as err:
         raise SystemExit(f"saynow: could not reach OpenRouter: {err.reason}")
 
-    for raw in response:
-        line = raw.decode("utf-8", "replace").strip()
-        if not line.startswith("data:"):
-            continue
-        payload = line[5:].strip()
-        if payload == "[DONE]":
-            continue
-        try:
-            event = json.loads(payload)
-        except json.JSONDecodeError:
-            continue  # keep-alive comments
-        if event.get("error"):
-            raise SystemExit(f"saynow: OpenRouter: {event['error'].get('message')}")
-        delta = (event.get("choices") or [{}])[0].get("delta") or {}
-        data = (delta.get("audio") or {}).get("data")
-        if data:
-            chunks.append(base64.b64decode(data))
-
-    pcm = b"".join(chunks)
-    if not pcm:
-        raise SystemExit(
-            f"saynow: OpenRouter returned no audio for model "
-            f"\"{model or OPENROUTER_DEFAULT_MODEL}\". Not every model can emit "
-            "speech — see `saynow models` for ones that can."
-        )
-
-    return _wav_header(len(pcm)) + pcm
+    audio, ext = _identify(raw)
+    return audio, ext, chosen_model, chosen_voice
 
 
-def openrouter_audio_models() -> List[str]:
-    """Models on OpenRouter whose architecture declares audio output."""
+def openrouter_audio_models() -> List[Dict[str, Any]]:
+    """Every OpenRouter model that can synthesise speech, with what it costs."""
     try:
-        with urllib.request.urlopen("https://openrouter.ai/api/v1/models") as response:
+        with urllib.request.urlopen(OPENROUTER_SPEECH_MODELS_URL) as response:
             payload = json.loads(response.read())
     except (urllib.error.URLError, json.JSONDecodeError):
         return []
     return [
-        m["id"]
+        {
+            "id": m["id"],
+            "price": float((m.get("pricing") or {}).get("prompt") or 0),
+            "voices": len(OPENROUTER_VOICES.get(m["id"], [])),
+            "is_default": m["id"] == OPENROUTER_DEFAULT_MODEL,
+        }
         for m in payload.get("data", [])
-        if "audio" in ((m.get("architecture") or {}).get("output_modalities") or [])
     ]
 
 
@@ -332,15 +355,22 @@ SYNTHESIZERS = {
     "openrouter": synthesize_openrouter,
 }
 
-# Cloud providers whose audio arrives as WAV rather than MP3.
-WAV_PROVIDERS = {"openrouter"}
 
 
-def voices(provider_id: str, api_key: Optional[str] = None) -> List[Tuple[str, str, str]]:
+def voices(provider_id: str, api_key: Optional[str] = None, model: Optional[str] = None) -> List[Tuple[str, str, str]]:
     if provider_id == "system":
         return system_voices()
-    if provider_id in {"openai", "openrouter"}:
+    if provider_id == "openai":
         return [(name, "multi", "") for name in OPENAI_VOICES]
+    if provider_id == "openrouter":
+        chosen = model or OPENROUTER_DEFAULT_MODEL
+        known = OPENROUTER_VOICES.get(chosen)
+        if not known:
+            return [("(unknown)", "", f"no verified voice list for {chosen} — pass --voice")]
+        return [
+            (name, chosen.split("/")[0], "default" if i == 0 else "")
+            for i, name in enumerate(known)
+        ]
     if provider_id == "elevenlabs":
         if not api_key:
             return []

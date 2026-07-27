@@ -1,4 +1,4 @@
-.TH SAYNOW 1 "2026-07-27" "saynow 0.4.0" "User Commands"
+.TH SAYNOW 1 "2026-07-27" "saynow 0.5.0" "User Commands"
 .SH NAME
 saynow \- speak text aloud from the terminal
 .SH SYNOPSIS
@@ -44,6 +44,10 @@ List voice names valid for the active provider.
 .TP
 .B models
 List OpenRouter models that can emit speech.
+.TP
+.B history
+List archived clips, newest first. \fBhistory open\fR [\fIn\fR] plays one,
+\fBhistory path\fR prints the directory, \fBhistory clear\fR deletes them all.
 .TP
 .B help
 Show the full help text.
@@ -108,7 +112,7 @@ l l l.
 \fBsystem\fR|no credential|offline, built into the OS
 \fBopenai\fR|OPENAI_API_KEY|dedicated speech endpoint
 \fBelevenlabs\fR|ELEVENLABS_API_KEY|most natural, highest cost
-\fBopenrouter\fR|OPENROUTER_API_KEY|audio\-capable chat models
+\fBopenrouter\fR|OPENROUTER_API_KEY|15+ dedicated speech models
 .TE
 .PP
 If a cloud provider is selected but no credential is found,
@@ -156,8 +160,8 @@ Precedence, from lowest to highest, is built\-in defaults, the config file,
 environment variables, then command\-line flags.
 .PP
 Settings accepted by \fBconfig set\fR: \fBprovider\fR, \fBvoice\fR,
-\fBmodel\fR, \fBspeed\fR, \fBopenaiApiKey\fR, \fBelevenlabsApiKey\fR and
-\fBopenrouterApiKey\fR.
+\fBmodel\fR, \fBspeed\fR, \fBhistoryLimit\fR, \fBopenaiApiKey\fR,
+\fBelevenlabsApiKey\fR and \fBopenrouterApiKey\fR.
 .PP
 API keys are deliberately not accepted as flags, because argv is visible to
 .BR ps (1)
@@ -176,6 +180,9 @@ Override the directory holding \fIconfig.json\fR.
 .B SAYNOW_LOCK_PATH
 Override the playback lock file, giving this process its own queue instead of
 the machine\-wide one.
+.TP
+.B SAYNOW_HISTORY_DIR
+Override where archived clips are written.
 .TP
 .BR OPENAI_API_KEY ", " ELEVENLABS_API_KEY ", " OPENROUTER_API_KEY
 Provider credentials. These take precedence over the config file.
@@ -197,16 +204,17 @@ Configuration, mode 0600.
 .TP
 .I $TMPDIR/saynow.lock
 Lock file serialising concurrent playback.
+.SH HISTORY
+Every cloud synthesis is archived, so converting a long article once means you
+can replay or share it without paying for it again. The newest 50 clips are
+kept; change that with \fBsaynow config set historyLimit\fR \fIn\fR, or set it
+to 0 to archive nothing. The system voice is not archived, because it speaks
+directly and never produces a file.
 .SH LIMITATIONS
-.B openrouter
-has no dedicated speech endpoint.
+Voice names are vendor\-specific and OpenRouter rejects a request without one.
 .B saynow
-drives an audio\-capable chat model and instructs it to speak the text
-verbatim. It normally complies but may occasionally rephrase; use
-.B openai
-or
-.B elevenlabs
-when exact reproduction matters.
+ships verified voice lists for the models it knows; for the rest, pass
+\fB\-\-voice\fR explicitly.
 .PP
 The
 .B system

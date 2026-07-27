@@ -20,6 +20,8 @@ export const DEFAULTS = {
   voice: null,
   model: null,
   speed: 1,
+  // How many synthesised clips to keep on disk. 0 disables the archive.
+  historyLimit: 50,
 };
 
 export function load() {

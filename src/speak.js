@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { resolve, apiKey } from './config.js';
+import * as history from './history.js';
 import { get } from './providers/index.js';
 import { play } from './play.js';
 import { acquire } from './queue.js';
@@ -51,11 +52,23 @@ export async function speak(text, flags = {}) {
     return {};
   }
 
-  const { audio, ext } = await provider.synthesize(text, {
+  const { audio, ext, model: usedModel, voice: usedVoice } = await provider.synthesize(text, {
     apiKey: key,
     voice: config.voice,
     model: config.model,
     speed: config.speed,
+  });
+
+  // Archive before playing: a long article is expensive to regenerate, and the
+  // user may want to keep or share it long after the audio has finished.
+  history.record({
+    audio,
+    ext,
+    text,
+    provider: providerId,
+    model: usedModel ?? config.model,
+    voice: usedVoice ?? config.voice,
+    limit: config.historyLimit ?? history.DEFAULT_LIMIT,
   });
 
   if (flags.save) {

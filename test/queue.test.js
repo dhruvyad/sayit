@@ -11,6 +11,12 @@ const { acquire } = await import('../src/queue.js');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** Backdate a lock so it falls outside the mid-creation grace window. */
+const age = (seconds = 10) => {
+  const when = new Date(Date.now() - seconds * 1000);
+  fs.utimesSync(LOCK_PATH, when, when);
+};
+
 afterEach(() => fs.rmSync(LOCK_PATH, { force: true }));
 
 test('acquire creates the lock and release removes it', async () => {
@@ -86,6 +92,7 @@ test('concurrent holders never overlap', async () => {
 test('a lock held by a dead process is reclaimed', async () => {
   // pid 999999 is far above the default pid_max and is not running.
   fs.writeFileSync(LOCK_PATH, JSON.stringify({ pid: 999999, at: Date.now() }));
+  age();
 
   const release = await Promise.race([
     acquire(),
@@ -101,6 +108,7 @@ test('a lock held by a dead process is reclaimed', async () => {
 
 test('a corrupt lock file is reclaimed', async () => {
   fs.writeFileSync(LOCK_PATH, 'this is not json');
+  age();
 
   const release = await Promise.race([
     acquire(),
@@ -116,6 +124,7 @@ test('a corrupt lock file is reclaimed', async () => {
 test('a lock older than the stale window is reclaimed even if the pid is alive', async () => {
   // Our own pid is alive, so only the age check can release this one.
   fs.writeFileSync(LOCK_PATH, JSON.stringify({ pid: process.pid, at: 0 }));
+  age();
 
   const release = await Promise.race([
     acquire(),
@@ -125,4 +134,27 @@ test('a lock older than the stale window is reclaimed even if the pid is alive',
   ]);
 
   release();
+});
+
+test('a lock that is still mid-creation is never stolen', async () => {
+  // acquire() creates the file and writes to it as two steps. A rival arriving
+  // inside that window sees an empty file; if it treated that as corrupt and
+  // deleted it, both processes would hold the lock and speak over each other.
+  fs.writeFileSync(LOCK_PATH, '');
+
+  let stolen = false;
+  const attempt = acquire({ timeoutMs: 800 }).then(
+    (release) => {
+      stolen = true;
+      release();
+    },
+    () => {},
+  );
+
+  await sleep(400);
+  assert.equal(stolen, false, 'an empty, freshly created lock must be respected');
+  assert.ok(fs.existsSync(LOCK_PATH), 'the rival must not have deleted it');
+
+  fs.rmSync(LOCK_PATH, { force: true });
+  await attempt;
 });

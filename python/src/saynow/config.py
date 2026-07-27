@@ -14,6 +14,8 @@ DEFAULTS: Dict[str, Any] = {
     "voice": None,
     "model": None,
     "speed": 1,
+    # How many synthesised clips to keep on disk. 0 disables the archive.
+    "historyLimit": 50,
 }
 
 

@@ -11,6 +11,8 @@ const LOCK_PATH =
   process.env.SAYNOW_LOCK_PATH || path.join(os.tmpdir(), 'saynow.lock');
 const POLL_MS = 60;
 const STALE_MS = 5 * 60 * 1000;
+/** A lock younger than this is never reclaimed — it may still be mid-creation. */
+const GRACE_MS = 2000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -24,17 +26,24 @@ const isAlive = (pid) => {
 };
 
 function clearIfStale() {
-  let raw;
+  let stats;
   try {
-    raw = fs.readFileSync(LOCK_PATH, 'utf8');
+    stats = fs.statSync(LOCK_PATH);
   } catch {
     return;
   }
 
+  // The holder creates the file and writes to it as two steps, so for a moment
+  // it is empty. Treating that as corrupt and deleting it would hand the lock
+  // to a second process while the first still holds it — both would then speak
+  // at once. Never reclaim a lock young enough to still be mid-creation.
+  if (Date.now() - stats.mtimeMs < GRACE_MS) return;
+
   let holder;
   try {
-    holder = JSON.parse(raw);
+    holder = JSON.parse(fs.readFileSync(LOCK_PATH, 'utf8'));
   } catch {
+    // Old and unreadable: its owner died before finishing.
     fs.rmSync(LOCK_PATH, { force: true });
     return;
   }

@@ -44,7 +44,12 @@ export async function synthesize(text, { apiKey, voice, model, speed } = {}) {
     throw new Error(`ElevenLabs request failed (${res.status}). ${detail}`);
   }
 
-  return { audio: Buffer.from(await res.arrayBuffer()), ext: 'mp3' };
+  return {
+    audio: Buffer.from(await res.arrayBuffer()),
+    ext: 'mp3',
+    model: body.model_id,
+    voice: voiceId,
+  };
 }
 
 export async function voices({ apiKey } = {}) {

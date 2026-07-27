@@ -64,7 +64,7 @@ saynow --save note.mp3 "hello"      # write a file instead of playing
 | `system` | Fair | Nothing — built into the OS |
 | `openai` | Good | `OPENAI_API_KEY` |
 | `elevenlabs` | Best | `ELEVENLABS_API_KEY` |
-| `openrouter` | Good | `OPENROUTER_API_KEY` |
+| `openrouter` | **Best** | `OPENROUTER_API_KEY` — 15+ speech models behind one key |
 
 If a cloud provider is configured but its key is missing, saynow warns on stderr
 and speaks with the system voice anyway — an agent reporting "done" to someone
@@ -75,11 +75,28 @@ produce three sentences rather than one muddle.
 ## Configure
 
 ```bash
-saynow init                          # interactive setup
-saynow config set provider openai
-saynow voices                        # available voices
-saynow models                        # OpenRouter models that can speak
+saynow init                                    # interactive setup
+saynow config set provider openrouter
+saynow models                                  # speech models, with prices
+saynow voices -p openrouter -m deepgram/aura-2 # that model's voices
 ```
+
+`saynow models` lists every OpenRouter speech model — Google, xAI, Deepgram,
+MiniMax, Qwen, Kokoro and others — with the price of each, loaded live.
+
+## Keep what you synthesised
+
+Reading a long article costs money and seconds, so every cloud synthesis is
+archived rather than thrown away:
+
+```bash
+saynow history            # newest first, with size and model
+saynow history open 3     # play one back
+saynow history path       # the directory, to share a file from it
+```
+
+The newest 50 are kept — `saynow config set historyLimit <n>` to change it, or
+`0` to archive nothing.
 
 Config lives at `~/.config/saynow/config.json`, mode `0600`. Precedence is
 defaults → config file → environment → flags. API keys are never accepted as

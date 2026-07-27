@@ -30,6 +30,8 @@ LOCK_PATH = Path(
     os.environ.get("SAYNOW_LOCK_PATH") or Path(tempfile.gettempdir()) / "saynow.lock"
 )
 STALE_SECONDS = 300
+# A lock younger than this is never reclaimed — it may still be mid-creation.
+GRACE_SECONDS = 2.0
 
 
 def find_player():
@@ -65,10 +67,25 @@ def _alive(pid: int) -> bool:
 
 def _clear_if_stale() -> None:
     try:
+        age = time.time() - LOCK_PATH.stat().st_mtime
+    except FileNotFoundError:
+        return
+    except OSError:
+        return
+
+    # The holder creates the file and writes to it as two steps, so for a moment
+    # it is empty. Treating that as corrupt and deleting it would hand the lock
+    # to a second process while the first still holds it — both would then speak
+    # at once. Never reclaim a lock young enough to still be mid-creation.
+    if age < GRACE_SECONDS:
+        return
+
+    try:
         holder = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return
     except (json.JSONDecodeError, OSError):
+        # Old and unreadable: its owner died before finishing.
         LOCK_PATH.unlink(missing_ok=True)
         return
 

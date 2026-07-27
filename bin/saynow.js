@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline/promises';
@@ -7,6 +8,7 @@ import { parseArgs } from 'node:util';
 
 import { speak } from '../src/speak.js';
 import { canShowBubble, showBubble } from '../src/bubble.js';
+import * as history from '../src/history.js';
 import { get, providerIds, providers } from '../src/providers/index.js';
 import {
   CONFIG_PATH,
@@ -43,7 +45,7 @@ const OPTIONS = {
   version: { type: 'boolean' },
 };
 
-const SUBCOMMANDS = new Set(['init', 'config', 'voices', 'models', 'help']);
+const SUBCOMMANDS = new Set(['init', 'config', 'voices', 'models', 'history', 'help']);
 
 async function main() {
   let values;
@@ -91,6 +93,7 @@ async function main() {
     if (command === 'config') return configCommand(rest);
     if (command === 'voices') return voicesCommand(flags);
     if (command === 'models') return modelsCommand();
+    if (command === 'history') return historyCommand(rest);
   }
 
   const text = positionals.length ? positionals.join(' ') : await readStdin();
@@ -202,7 +205,10 @@ function configCommand([action, key, ...valueParts]) {
 async function voicesCommand(flags) {
   const config = resolve(flags);
   const provider = get(config.provider);
-  const list = await provider.voices({ apiKey: apiKey(config.provider, config) });
+  const list = await provider.voices({
+    apiKey: apiKey(config.provider, config),
+    model: config.model,
+  });
 
   if (!list.length) {
     console.log(`No voices listed for provider "${config.provider}".`);
@@ -268,20 +274,82 @@ async function speakCommand(text, flags) {
 }
 
 async function modelsCommand() {
-  const { audioModels } = providers.openrouter;
-  const list = await audioModels();
+  const list = await providers.openrouter.audioModels();
 
   if (!list.length) {
-    console.log('Could not reach OpenRouter to list models.');
+    console.log('Could not reach OpenRouter to list speech models.');
     return;
   }
 
-  console.log('OpenRouter models that can emit speech:\n');
-  for (const model of list) console.log(`  ${model}`);
+  const width = Math.max(...list.map((m) => m.id.length));
+  console.log('OpenRouter speech models:\n');
+
+  for (const model of list) {
+    // Pricing is per input token; scale to something a human can compare.
+    const cost = model.price ? `$${(model.price * 1000).toFixed(4)}/1k tok` : 'free';
+    const voices = model.voices ? `${model.voices} voices` : 'voice required';
+    const mark = model.isDefault ? '*' : ' ';
+    console.log(`${mark} ${model.id.padEnd(width)}  ${cost.padStart(15)}  ${voices}`);
+  }
+
   console.log(
-    `\nUse one with: saynow -p openrouter -m <id> "text"` +
-      `\nOr set a default: saynow config set model <id>`,
+    `\n* default. Use another with: saynow -p openrouter -m <id> "text"` +
+      `\nSet a default with:          saynow config set model <id>` +
+      `\nList a model's voices with:  saynow voices -p openrouter -m <id>`,
   );
+}
+
+function historyCommand([action, ...rest]) {
+  switch (action ?? 'list') {
+    case 'path':
+      return void console.log(history.HISTORY_DIR);
+
+    case 'clear': {
+      const removed = history.clear();
+      return void console.log(`Removed ${removed} clip${removed === 1 ? '' : 's'}.`);
+    }
+
+    case 'open': {
+      // Hand the newest clip, or the nth, to whatever normally opens audio.
+      const entries = history.readIndex();
+      const index = rest[0] ? Number(rest[0]) - 1 : 0;
+      const entry = entries[index];
+      if (!entry) fail(`no clip at position ${index + 1}. Run: saynow history`);
+      const file = path.join(history.HISTORY_DIR, entry.file);
+      spawnSync(process.platform === 'darwin' ? 'open' : 'xdg-open', [file], {
+        stdio: 'ignore',
+      });
+      return void console.log(file);
+    }
+
+    case 'list': {
+      const entries = history.readIndex();
+      if (!entries.length) {
+        console.log('No archived clips yet.');
+        console.log(`\nThe system voice is not archived — it speaks directly and`);
+        console.log(`produces no file. Cloud providers are.`);
+        return;
+      }
+
+      entries.forEach((entry, i) => {
+        const when = entry.at.replace('T', ' ').slice(0, 16);
+        const size = history.formatBytes(entry.bytes).padStart(8);
+        const source = [entry.provider, entry.model, entry.voice].filter(Boolean).join(' / ');
+        console.log(`${String(i + 1).padStart(3)}. ${when}  ${size}  ${source}`);
+        console.log(`     ${entry.text.replace(/\s+/g, ' ').slice(0, 88)}`);
+      });
+
+      console.log(
+        `\n${entries.length} clip${entries.length === 1 ? '' : 's'}, ` +
+          `${history.formatBytes(history.usage())} in ${history.HISTORY_DIR}` +
+          `\nPlay one with: saynow history open <n>`,
+      );
+      return;
+    }
+
+    default:
+      fail(`unknown history command "${action}". Use: list, open, path, clear`);
+  }
 }
 
 function fail(message) {

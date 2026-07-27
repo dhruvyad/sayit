@@ -16,7 +16,11 @@ COMMANDS
   config set <key> <v>   Change one setting and save it
   config path            Print the absolute path of the config file
   voices                 List voice names valid for the active provider
-  models                 List OpenRouter models that can emit speech
+  models                 List OpenRouter speech models with their prices
+  history                List archived clips, newest first
+  history open [n]       Play an archived clip, default the newest
+  history path           Print the archive directory
+  history clear          Delete every archived clip
   help                   Show this text
 
 OPTIONS
@@ -51,8 +55,9 @@ PROVIDERS
   system       none                  fair     offline, built into the OS
   openai       OPENAI_API_KEY        good     dedicated speech endpoint
   elevenlabs   ELEVENLABS_API_KEY    best     most natural, highest cost
-  openrouter   OPENROUTER_API_KEY    good     routes to audio-capable chat
-                                              models, see LIMITATIONS
+  openrouter   OPENROUTER_API_KEY    best     15+ speech models from Google,
+                                              xAI, Deepgram, MiniMax and
+                                              others behind one key
 
 CONFIGURATION
   File: {{CONFIG_PATH}}, created with mode 0600.
@@ -64,6 +69,7 @@ CONFIGURATION
     voice              voice name, see saynow voices
     model              model id, see saynow models
     speed              number between 0.25 and 4.0
+    historyLimit       clips to keep in the archive, 0 disables it
     openaiApiKey       secret, redacted by config list
     elevenlabsApiKey   secret, redacted by config list
     openrouterApiKey   secret, redacted by config list
@@ -76,6 +82,7 @@ CONFIGURATION
     SAYNOW_CONFIG_DIR  override the config directory
     SAYNOW_LOCK_PATH   override the playback lock file, giving this process
                        its own queue instead of the machine-wide one
+    SAYNOW_HISTORY_DIR override where archived clips are written
     OPENAI_API_KEY, ELEVENLABS_API_KEY, OPENROUTER_API_KEY
 
   API keys are deliberately not accepted as flags: argv is visible to ps and
@@ -126,11 +133,25 @@ EXIT CODES
       or no audio player found on the system
   2   --ask was dismissed or timed out without a reply
 
+HISTORY
+  Every cloud synthesis is archived, so converting a long article once means
+  you can replay or share it without paying for it again. The newest 50 clips
+  are kept; change that with: saynow config set historyLimit <n>, or set it to
+  0 to archive nothing.
+
+    saynow history            list clips, newest first
+    saynow history open 3     play the third
+    saynow history path       print the directory, to share a file from it
+
+  The system voice is not archived. It speaks directly and never produces a
+  file, so there is nothing to keep. Clip size varies a lot by model: some
+  return mp3, others return raw audio that saynow wraps as WAV, which is
+  roughly ten times larger.
+
 LIMITATIONS
-  openrouter has no dedicated speech endpoint. saynow drives an audio-capable
-  chat model and instructs it to speak the text verbatim. It normally
-  complies but may occasionally rephrase. Use openai or elevenlabs when exact
-  reproduction matters.
+  Voice names are vendor-specific and OpenRouter rejects a request without
+  one. saynow ships verified voice lists for the models it knows; for the
+  rest, pass --voice explicitly. Run: saynow voices -p openrouter -m <id>
   The system provider cannot write files, so it rejects --save.
   Windows support is best-effort and less tested than macOS and Linux.
   --ask needs the npm build. The pip build speaks the text and then exits 2,
@@ -141,7 +162,8 @@ LIMITATIONS
 EXAMPLES
   saynow "the build finished"
   saynow -p openai -v nova "tests passed, 42 of 42"
-  saynow -p openrouter -m openai/gpt-audio "routed through OpenRouter"
+  saynow -p openrouter -v Kore "a different Gemini voice"
+  saynow -p openrouter -m deepgram/aura-2 -v aura-2-zeus-en "another vendor"
   saynow -r 320 "read this quickly"
   saynow --save note.mp3 "write to a file instead of playing"
   saynow --strict -p elevenlabs "fail loudly if the key is missing"

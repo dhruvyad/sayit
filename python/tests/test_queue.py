@@ -18,6 +18,12 @@ os.environ["SAYNOW_LOCK_PATH"] = str(LOCK_PATH)
 from saynow.audio import queued  # noqa: E402  (must follow the env override)
 
 
+def age(seconds: float = 10.0) -> None:
+    """Backdate a lock so it falls outside the mid-creation grace window."""
+    when = time.time() - seconds
+    os.utime(LOCK_PATH, (when, when))
+
+
 class QueueTest(unittest.TestCase):
     def tearDown(self):
         LOCK_PATH.unlink(missing_ok=True)
@@ -69,12 +75,14 @@ class QueueTest(unittest.TestCase):
     def test_dead_holder_is_reclaimed(self):
         # pid 999999 is far above the default pid_max and is not running.
         LOCK_PATH.write_text(json.dumps({"pid": 999999, "at": time.time()}))
+        age()
         with queued(timeout=5):
             holder = json.loads(LOCK_PATH.read_text())
             self.assertEqual(holder["pid"], os.getpid(), "lock should now be ours")
 
     def test_corrupt_lock_is_reclaimed(self):
         LOCK_PATH.write_text("this is not json")
+        age()
         with queued(timeout=5):
             pass
         self.assertFalse(LOCK_PATH.exists())
@@ -82,8 +90,31 @@ class QueueTest(unittest.TestCase):
     def test_lock_past_the_stale_window_is_reclaimed(self):
         # Our own pid is alive, so only the age check can release this one.
         LOCK_PATH.write_text(json.dumps({"pid": os.getpid(), "at": 0}))
+        age()
         with queued(timeout=5):
             pass
+
+    def test_lock_still_mid_creation_is_never_stolen(self):
+        # queued() creates the file and writes to it as two steps. A rival
+        # arriving inside that window sees an empty file; treating that as
+        # corrupt and deleting it would let both hold the lock at once.
+        LOCK_PATH.write_text("")
+        stolen = []
+
+        def rival():
+            try:
+                with queued(timeout=0.8):
+                    stolen.append(True)
+            except SystemExit:
+                pass
+
+        thread = threading.Thread(target=rival)
+        thread.start()
+        time.sleep(0.4)
+        self.assertEqual(stolen, [], "an empty, freshly created lock must be respected")
+        self.assertTrue(LOCK_PATH.exists(), "the rival must not have deleted it")
+        LOCK_PATH.unlink(missing_ok=True)
+        thread.join(timeout=5)
 
 
 if __name__ == "__main__":

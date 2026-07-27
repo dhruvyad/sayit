@@ -33,7 +33,12 @@ export async function synthesize(text, { apiKey, voice, model, speed } = {}) {
 
   if (!res.ok) throw new Error(await describeError(res, 'OpenAI'));
 
-  return { audio: Buffer.from(await res.arrayBuffer()), ext: 'mp3' };
+  return {
+    audio: Buffer.from(await res.arrayBuffer()),
+    ext: 'mp3',
+    model: body.model,
+    voice: body.voice,
+  };
 }
 
 export function voices() {
