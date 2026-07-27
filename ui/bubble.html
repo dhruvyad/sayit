@@ -810,23 +810,32 @@
       /**
        * The bubble stays for as long as you are with it.
        *
-       * Hovering, scrolling or focusing holds it open; moving away starts the
-       * countdown again. Once you have typed anything it never auto-dismisses,
-       * because losing a half-written reply is worse than a bubble that
-       * outstays its welcome.
+       * Being there means the pointer on it or a hand on the keyboard, and
+       * nothing else. Scrolling used to count too, until documents showed why
+       * it cannot: the reveal scrolls the transcript itself, that scroll is
+       * indistinguishable from a person's, and it arrived a frame after the
+       * countdown began — so every document silently cancelled its own timer
+       * and the bar was never seen. Nothing is lost by dropping it, since a
+       * scroll goes to whatever is under the pointer, and that is a hover.
+       *
+       * Moving away starts the countdown again. A reply in progress holds it
+       * for as long as the reply exists, because losing a half-written answer
+       * is worse than a bubble that outstays its welcome.
+       *
+       * Both signals have to be things that can end. Flags used to be latched
+       * the first time you typed or reached for the box and were never
+       * cleared, so a character typed and then deleted held the bubble open
+       * for good — with nothing behind it, that is forever. Reading the field
+       * cannot get stuck, because an empty box is empty however it got there.
+       *
+       * Focus is deliberately not one of the signals: the page focuses the
+       * reply box itself the moment it loads, and counting that made holding()
+       * true forever for every --ask bubble.
        */
       let hovering = false;
-      let committed = false;
-      let claimed = false;
 
-      /**
-       * Focus is not engagement here, because the page focuses the reply box
-       * itself the moment it loads. Counting that as "they are using it" made
-       * holding() true forever with --ask: the countdown never started, the
-       * bar never appeared, and the bubble sat there until the CLI timed out.
-       * Only a focus they performed themselves counts.
-       */
-      const holding = () => hovering || committed || claimed;
+      const drafting = () => el.field.value.trim().length > 0;
+      const holding = () => hovering || drafting();
 
       function startDismissTimer(ms = state.dismissMs ?? 5000) {
         clearTimeout(dismissTimer);
@@ -851,14 +860,25 @@
 
       const focusField = () => el.field.focus({ preventScroll: true });
 
-      /** Hold it open. Anything typed makes that permanent. */
-      function engage({ permanent = false } = {}) {
-        if (permanent) committed = true;
+      /** Hold it open: stop the countdown and fade the bar where it stands. */
+      function engage() {
         clearTimeout(dismissTimer);
         // Fade the bar out where it stands rather than snapping it away, and
         // leave it ready to be reset when the countdown next starts.
         el.timer.style.transition = 'opacity 0.18s ease';
         el.timer.style.opacity = '0';
+      }
+
+      /**
+       * Look again at whether anyone is here, and hold or count down to match.
+       *
+       * Every path that can end an interaction goes through this rather than
+       * through engage() alone, so nothing can cancel the countdown without
+       * something being able to bring it back.
+       */
+      function reconsider() {
+        if (holding()) engage();
+        else if (audioEnded) startDismissTimer();
       }
 
       /** Speech ended, or the pointer left: start counting down again. */
@@ -890,7 +910,8 @@
       function submit() {
         const text = el.field.value.trim();
         if (!text) return;
-        engage({ permanent: true });
+        // Answered: the only thing left to do is close, 420ms from now.
+        engage();
         el.reply.classList.add('hidden');
         el.sent.classList.remove('hidden');
         showSender(state.from);
@@ -926,11 +947,12 @@
 
       if (state.ask) el.reply.classList.remove('hidden');
 
+      // A half-written reply must never be swallowed by a timer — and an
+      // emptied box is no longer half-written, so deleting what you typed
+      // hands the bubble back to the countdown rather than freezing it.
       el.field.addEventListener('input', () => {
-        const typed = el.field.value.trim().length > 0;
-        el.send.classList.toggle('ready', typed);
-        // A half-written reply must never be swallowed by a timer.
-        engage({ permanent: typed });
+        el.send.classList.toggle('ready', drafting());
+        reconsider();
       });
 
       // Reaching for the box holds the bubble open. Deliberately not the
@@ -938,19 +960,20 @@
       // does not reliably deliver that focus synchronously, so a flag set
       // around our own focus() call cannot be trusted to still be set when
       // the event arrives. A pointer or a key is unambiguously the user.
-      const claim = () => {
-        claimed = true;
-        engage();
-      };
-      el.field.addEventListener('pointerdown', claim);
-      el.field.addEventListener('mousedown', claim);
+      el.field.addEventListener('pointerdown', engage);
+      el.field.addEventListener('mousedown', engage);
       el.send.addEventListener('click', submit);
 
+      // Held down, then looked at again on the way up. A key that never
+      // becomes text — an arrow, a modifier — would otherwise cancel the
+      // countdown with no input event behind it to bring it back.
       el.field.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') return close('dismiss');
-        claim(); // typing counts even before the value changes
+        engage(); // typing counts even before the value changes
         if (e.key === 'Enter') submit();
       });
+
+      el.field.addEventListener('keyup', reconsider);
 
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') close('dismiss');
@@ -963,11 +986,10 @@
         engage();
       });
 
-      // A click anywhere inside is unambiguous: they are using this. It
-      // matters most for links, which hand the screen to a browser — the
-      // pointer leaves, and without this the bubble counts down and closes
-      // while they are reading whatever they just opened.
-      el.bubble.addEventListener('click', () => claim());
+      // A click anywhere inside is unambiguous: they are using this. It holds
+      // only until the pointer leaves, though — the countdown it stops is the
+      // one the pointer will start again on the way out.
+      el.bubble.addEventListener('click', engage);
 
       el.bubble.addEventListener('mouseleave', () => {
         hovering = false;
@@ -976,13 +998,12 @@
         if (audioEnded) dismissAfter(state.ask ? undefined : 1200);
       });
 
-      // Reading counts as being here, even without moving the pointer.
-      el.transcript.addEventListener('scroll', () => engage());
-
       el.stop.addEventListener('click', () => {
         player?.pause();
         post('/stop');
-        engage({ permanent: true });
+        // You are on the button, so the pointer is already holding it open.
+        // Nothing here latches: silencing it is not a promise to keep it.
+        engage();
         audioEnded = true; // pressing stop ends the audio by definition
         revealAllNow();
         el.field.focus();

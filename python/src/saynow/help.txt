@@ -140,13 +140,14 @@ THE BUBBLE
   Long text is rendered a sentence at a time so speech starts while the rest
   is still being made — a few seconds rather than the twenty a whole article
   takes to synthesise. It stays one bubble showing the full transcript; the
-  split is a synthesis detail, not something you see. It fades out shortly after the audio ends, so a sentence you
-  half-heard is still readable. Pass --no-ui to suppress it, or --quiet to
-  keep it while silencing stderr.
+  split is a synthesis detail, not something you see. It fades out shortly
+  after the audio ends, so a sentence you half-heard is still readable. Pass
+  --no-ui to suppress it, or --quiet to keep it while silencing stderr.
 
-  It stays while you are with it — hovering, scrolling or typing holds it
+  It stays while you are with it — the pointer on it or typing in it holds it
   open, and the countdown resumes a moment after you leave. Anything typed
-  keeps it until you send or dismiss it.
+  keeps it until you send or dismiss it. Nothing else takes it away: there is
+  no time limit on a bubble you are using.
 
   The bubble talks to saynow over a loopback server that is authenticated per
   message, so nothing else on the machine can answer a question on your behalf.
@@ -167,7 +168,8 @@ DOCUMENTS
 
     saynow --file news.md "Morning summary is ready"
 
-  Hover, scroll or type to hold the bubble open while you read it.
+  Keep the pointer on the bubble, or type in it, to hold it open while you
+  read. It counts down only once you are away from it.
 
   Markdown in the file is escaped before rendering and only tags saynow
   builds itself are emitted, so a document cannot script the bubble. Links
@@ -182,9 +184,10 @@ ASKING
 
     answer=$(saynow --ask "Should I drop the old table?")
 
-  It waits indefinitely once you interact with it. If you do not, it fades out
-  five seconds after the audio ends and exits 2, which lets a caller tell
-  "they said no" apart from "nobody was there".
+  It waits indefinitely once you reach for it — the pointer on the bubble or a
+  hand in the reply box. If you do not, it fades out five seconds after the
+  audio ends and exits 2, which lets a caller tell "they said no" apart from
+  "nobody was there".
 
 EXIT CODES
   0   spoke successfully, wrote the file when --save was given, or got a reply

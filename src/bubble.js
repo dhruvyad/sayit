@@ -43,15 +43,18 @@ export async function showBubble({
   rate,
   from,
   document,
-  // A question needs time to be read and answered, so it holds four times
-  // longer than a statement you only have to hear.
-  dismissMs = ask ? 20_000 : 5000,
+  // The same for a question as for a statement. Being present is what holds a
+  // bubble open, not what it happens to be asking, and a question you are not
+  // there for should not sit on the screen four times as long as one you are.
+  dismissMs = 5000,
   onStop,
   speech,
   audio,
   audioType,
   chunks,
-  timeoutMs = 120_000,
+  // Off by default: nothing takes the bubble away on a clock. Tests set it to
+  // bound a headless server that no one is ever going to answer.
+  timeoutMs = null,
 } = {}) {
   // When the page plays the audio itself, the highlight is driven by the
   // element's own currentTime — exact by construction, rather than a
@@ -226,8 +229,13 @@ export async function showBubble({
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${server.address().port}/?t=${token}`;
 
-  const window = openWindow(url);
-  const guard = setTimeout(() => settle({ reason: 'dismiss' }), timeoutMs);
+  // Nothing here ends the bubble on a timer. It closes when the page says so —
+  // dismissed, answered, or counted down in front of someone who was not
+  // there. The one exception is the shell vanishing: if the panel is killed
+  // there is no longer anything on screen to answer with, and without this the
+  // caller would wait for an answer that can never arrive.
+  const window = openWindow(url, () => settle({ reason: 'dismiss' }));
+  const guard = timeoutMs ? setTimeout(() => settle({ reason: 'dismiss' }), timeoutMs) : null;
 
   // Resolves when the audio actually finishes, however long it really took.
   Promise.resolve(speech)
@@ -237,7 +245,7 @@ export async function showBubble({
   try {
     return await answered;
   } finally {
-    clearTimeout(guard);
+    if (guard) clearTimeout(guard);
     for (const res of listeners) res.end();
     window.close();
     server.close();
@@ -279,17 +287,25 @@ function readJson(req) {
 
 /* ---- window shells ------------------------------------------------------ */
 
-function openWindow(url) {
+function openWindow(url, onGone) {
   // Tests need the server without putting a window on someone's screen.
   if (process.env.SAYNOW_NO_WINDOW) return noWindow();
-  return nativePanel(url) || browserWindow(url) || noWindow();
+
+  const shell = nativePanel(url, onGone) || browserWindow(url);
+  if (shell) return shell;
+
+  // Neither shell opened, so nothing was put on the screen and no one can
+  // ever answer. With no clock left to fall back on, saying so immediately is
+  // what stops the caller waiting for a bubble that does not exist.
+  onGone?.();
+  return noWindow();
 }
 
 /**
  * The preferred shell: a borderless transparent NSPanel. Compiled on first use
  * and cached, keyed by a hash of the source so an upgrade rebuilds it.
  */
-function nativePanel(url) {
+function nativePanel(url, onGone) {
   if (process.platform !== 'darwin') return null;
   if (!fs.existsSync(SHELL_SOURCE)) return null;
   if (spawnSync('which', ['swiftc'], { stdio: 'ignore' }).status !== 0) return null;
@@ -316,6 +332,15 @@ function nativePanel(url) {
   const child = spawn(binary, [url, String(WIDTH), String(INITIAL_HEIGHT)], {
     stdio: ['pipe', 'ignore', 'ignore'],
   });
+
+  // The panel draws no close button of its own — the page does, and that goes
+  // through the server. So the panel process ending means it died rather than
+  // was dismissed, and there is now nothing on screen for anyone to answer
+  // with. Deliberately not wired for the browser fallback: a Chromium spawned
+  // against a profile that is already running hands its window to the existing
+  // instance and exits at once, which would read as an instant dismissal.
+  child.on('exit', () => onGone?.());
+  child.on('error', () => onGone?.());
 
   // The panel exits when this pipe closes, so it can never outlive us.
   return { close: () => child.kill() };

@@ -217,18 +217,39 @@ test('the countdown runs after a question, not only after a statement', () => {
   assert.match(bar.style.transition, /^transform \d+ms linear$/);
 });
 
-test('a question is given longer to answer than a statement takes to hear', () => {
-  const read = (state) => {
-    const { byId, calls } = loadPage({ ...state, hasAudio: true });
-    calls.players[0].handlers.ended();
-    return Number(/transform (\d+)ms/.exec(byId.get('timer').style.transition)?.[1]);
-  };
+test('the countdown runs for exactly as long as the CLI asked for', () => {
+  const { byId, calls } = loadPage({ ...PLAIN, ask: true, dismissMs: 5000, hasAudio: true });
+  calls.players[0].handlers.ended();
 
-  assert.ok(
-    read({ ...PLAIN, ask: true, dismissMs: 20000 }) >
-      read({ ...PLAIN, ask: false, dismissMs: 5000 }),
-    'five seconds is not long enough to read a question and type an answer',
+  assert.equal(
+    Number(/transform (\d+)ms/.exec(byId.get('timer').style.transition)?.[1]),
+    5000,
+    'the bar must run the length the caller set, not one of its own',
   );
+});
+
+test('the transcript scrolling itself does not cancel the countdown', () => {
+  // The reveal calls scrollIntoView on every word it lights, and a document is
+  // long enough to actually scroll the transcript. Treating that scroll as
+  // "they are reading" meant every document cancelled the countdown it had
+  // just started: the bar was drawn for one frame and never seen again, and
+  // nothing closed the bubble afterwards.
+  const { byId, calls } = loadPage({
+    ...PLAIN,
+    ask: true,
+    hasAudio: true,
+    html: '<h1>Weekly report</h1><p>Signups climbed nine per cent.</p>',
+  });
+  calls.players[0].handlers.ended();
+
+  const bar = byId.get('timer');
+  assert.equal(bar.style.transform, 'scaleX(0)', 'the countdown should have started');
+
+  // A frame later, the smooth scroll the reveal started settles.
+  byId.get('transcript').dispatch('scroll');
+
+  assert.equal(bar.style.opacity, '1', 'the bar must still be on screen');
+  assert.equal(bar.style.transform, 'scaleX(0)', 'and must still be counting down');
 });
 
 test('hovering holds the bubble open, and leaving restarts the countdown', () => {
@@ -257,12 +278,37 @@ test('the cursor landing in the box on its own does not hold the bubble open', (
   assert.equal(byId.get('timer').style.transform, 'scaleX(0)', 'it must still count down');
 });
 
-test('reaching for the box does hold it open', () => {
+test('a draft deleted back to nothing gives the countdown back', () => {
+  // Typing latched a flag that was never cleared, so a character typed and
+  // then deleted held the bubble open for good. With no guard behind it that
+  // is forever: the bar never returned and nothing ever closed the bubble.
   const { byId, calls } = loadPage({ ...PLAIN, ask: true, hasAudio: true });
-  byId.get('field').dispatch('pointerdown');
+  const field = byId.get('field');
+  const bar = byId.get('timer');
+
+  field.value = 'wait';
+  field.dispatch('input');
+  calls.players[0].handlers.ended();
+  assert.notEqual(bar.style.transform, 'scaleX(0)', 'a reply in progress holds it open');
+
+  field.value = '';
+  field.dispatch('input');
+  assert.equal(bar.style.transform, 'scaleX(0)', 'an empty box is not a reply in progress');
+  assert.equal(bar.style.opacity, '1', 'and the bar has to be visible again');
+});
+
+test('a key that never becomes text does not strand the countdown', () => {
+  // keydown stops the countdown before the value changes, which is right for
+  // a letter. An arrow or a modifier produces no input event to reconsider
+  // it, so the stop has to be undone on the way up instead.
+  const { byId, calls } = loadPage({ ...PLAIN, ask: true, hasAudio: true });
   calls.players[0].handlers.ended();
 
-  assert.notEqual(byId.get('timer').style.transform, 'scaleX(0)');
+  byId.get('field').dispatch('keydown', { key: 'ArrowLeft' });
+  byId.get('field').dispatch('keyup', { key: 'ArrowLeft' });
+
+  assert.equal(byId.get('timer').style.transform, 'scaleX(0)', 'it must still count down');
+  assert.equal(byId.get('timer').style.opacity, '1');
 });
 
 test('a reply in progress is never swallowed by the timer', () => {

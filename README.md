@@ -90,9 +90,9 @@ thing spoken, which is what a long report usually wants.
 </p>
 
 Relative image paths resolve against the document's own directory, so a folder
-holding the report and its charts works as-is. The bubble stays open while you
-hover, scroll or type in it, so a document is read at your pace rather than a
-timer's.
+holding the report and its charts works as-is. The bubble stays open for as
+long as the pointer is on it or you are typing in it, so a document is read at
+your pace rather than a timer's.
 
 Documents are escaped before rendering and only tags saynow builds itself are
 emitted, so one cannot script the bubble.

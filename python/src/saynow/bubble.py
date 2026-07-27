@@ -95,7 +95,9 @@ def show_bubble(
     document: Optional[Dict[str, Any]] = None,
     rate: Optional[float] = None,
     dismiss_ms: Optional[int] = None,
-    timeout: float = 120.0,
+    # Off by default: nothing takes the bubble away on a clock. Tests set it to
+    # bound a headless server that no one is ever going to answer.
+    timeout: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Show the bubble and wait. Returns {"reason": "reply"|"dismiss", "text": ...}."""
 
@@ -118,9 +120,9 @@ def show_bubble(
         "ask": ask,
         "from": sender or None,
         "rate": rate or 175,
-        # A question needs time to be read and answered, so it holds four
-        # times longer than a statement you only have to hear.
-        "dismissMs": dismiss_ms or (20000 if ask else 5000),
+        # The same for a question as for a statement. Being present is what
+        # holds a bubble open, not what it happens to be asking.
+        "dismissMs": dismiss_ms or 5000,
         "hasAudio": bool(audio),
         # Rendered here rather than in the page: the renderer escapes its input
         # and emits only tags it built, so the page never parses agent text.
@@ -222,7 +224,28 @@ def show_bubble(
     thread.start()
 
     url = f"http://127.0.0.1:{port}/?t={token}"
-    window = _open_window(url)
+    window, is_panel = _open_window(url)
+
+    # Nothing here ends the bubble on a timer. It closes when the page says so
+    # — dismissed, answered, or counted down in front of someone who was not
+    # there. The one exception is the shell vanishing: the panel draws no close
+    # button of its own, so its process ending means it died rather than was
+    # dismissed, and there is nothing left on screen for anyone to answer with.
+    # Deliberately not wired for the browser fallback: a Chromium spawned
+    # against a profile that is already running hands its window to the
+    # existing instance and exits at once, which would read as a dismissal.
+    if window is None and not os.environ.get("SAYNOW_NO_WINDOW"):
+        # Neither shell opened, so nothing was put on the screen and no one can
+        # ever answer. With no clock left to fall back on, saying so at once is
+        # what stops the caller waiting for a bubble that does not exist.
+        settle("dismiss")
+    elif window is not None and is_panel:
+
+        def watch(proc=window) -> None:
+            proc.wait()
+            settle("dismiss")
+
+        threading.Thread(target=watch, daemon=True).start()
 
     try:
         done.wait(timeout=timeout)
@@ -235,10 +258,14 @@ def show_bubble(
 
 
 def _open_window(url: str):
-    """Prefer the native panel; fall back to a Chromium app window."""
+    """Prefer the native panel; fall back to a Chromium app window.
+
+    Returns (process, is_panel). The caller treats the two shells differently
+    when they exit, so it has to be able to tell them apart.
+    """
     # Tests need the server without putting a window on someone's screen.
     if os.environ.get("SAYNOW_NO_WINDOW"):
-        return None
+        return None, False
     if sys.platform == "darwin" and shutil.which("swiftc"):
         source = Path(__file__).parent / "SaynowPanel.swift"
         digest = hashlib.sha256(source.read_bytes()).hexdigest()[:12]
@@ -253,17 +280,20 @@ def _open_window(url: str):
                 timeout=120,
             )
             if built.returncode != 0:
-                return _open_browser(url)
+                return _open_browser(url), False
 
         # The panel exits when this pipe closes, so it cannot outlive us.
-        return subprocess.Popen(
-            [str(binary), url, str(WIDTH), str(INITIAL_HEIGHT)],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+        return (
+            subprocess.Popen(
+                [str(binary), url, str(WIDTH), str(INITIAL_HEIGHT)],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ),
+            True,
         )
 
-    return _open_browser(url)
+    return _open_browser(url), False
 
 
 def _open_browser(url: str):
