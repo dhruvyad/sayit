@@ -1,78 +1,48 @@
 #!/usr/bin/env node
 // Build and install the macOS settings app after `npm install -g saynow`.
 //
-// Putting an app into /Applications during a package install is pushy, so this
-// holds itself to a few rules: macOS only, never in CI, never without the
-// toolchain already present, always announced, always skippable, and it can
-// never fail the install it is attached to. Anyone who declines still gets the
-// command line tool, and `saynow app install` any time later.
+// The hard rule here is that this must never be able to hold up an install.
+// Compiling touches swiftc, iconutil and codesign, any of which can be slow or
+// stall on a machine we know nothing about — an unaccepted Xcode licence, a
+// locked keychain, a cold toolchain. So the work is detached and npm is not
+// made to wait for it: the install finishes immediately and the app appears a
+// few seconds later, or it does not and the CLI is unaffected either way.
+//
+// It also holds itself to: macOS only, never in CI, never without the
+// toolchain already present, and skippable with SAYNOW_NO_APP.
 
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
-const say = (message) => process.stdout.write(`saynow: ${message}\n`);
-
 function skip(reason) {
-  // Quiet by default: a skipped optional extra is not news during an install.
-  if (process.env.SAYNOW_DEBUG) say(`skipping the settings app — ${reason}`);
+  if (process.env.SAYNOW_DEBUG) process.stdout.write(`saynow: skipping the app — ${reason}\n`);
   process.exit(0);
 }
 
 if (process.env.SAYNOW_NO_APP) skip('SAYNOW_NO_APP is set');
 if (process.platform !== 'darwin') skip('the settings app is macOS only');
-
-// A package install inside a build agent has no use for a GUI app, and the
-// four seconds of compiling is pure waste there.
 if (process.env.CI || process.env.CONTINUOUS_INTEGRATION) skip('running in CI');
 
-const build = path.join(ROOT, 'app', 'build.sh');
-if (!fs.existsSync(build)) skip('the app sources are not in this install');
+const helper = path.join(ROOT, 'scripts', 'install-app.sh');
+if (!fs.existsSync(helper)) skip('the app sources are not in this install');
 
+// Checked here rather than in the helper so the common "no Xcode tools" case
+// costs nothing and stays silent.
 if (spawnSync('which', ['swiftc'], { stdio: 'ignore' }).status !== 0) {
-  say(
-    'the settings app needs the Xcode command line tools. Install them with\n' +
-      '        xcode-select --install\n' +
-      '        then run: saynow app install',
-  );
-  process.exit(0);
+  skip('the Xcode command line tools are not installed');
 }
 
-// Prefer /Applications, fall back to the user's own folder when that is not
-// writable — an install should not need a password.
-const shared = '/Applications';
-const destination = canWrite(shared)
-  ? shared
-  : path.join(os.homedir(), 'Applications');
+// Detached, with every stream closed. Nothing it does can prompt, print into
+// the install log, or keep npm waiting.
+const child = spawn('bash', [helper], {
+  cwd: ROOT,
+  detached: true,
+  stdio: 'ignore',
+});
+child.unref();
 
-const result = spawnSync('bash', [build], { cwd: ROOT, stdio: 'ignore' });
-if (result.status !== 0) {
-  say('could not build the settings app. Run `saynow app install` to see why.');
-  process.exit(0);
-}
-
-try {
-  fs.mkdirSync(destination, { recursive: true });
-  const target = path.join(destination, 'Saynow.app');
-  fs.rmSync(target, { recursive: true, force: true });
-  fs.cpSync(path.join(ROOT, 'app', 'build', 'Saynow.app'), target, {
-    recursive: true,
-  });
-  say(`installed the settings app to ${target}`);
-  say('run `saynow --help` for the command line tool, or open Saynow to configure it');
-} catch (error) {
-  say(`could not install the settings app: ${error.message}`);
-}
-
-function canWrite(directory) {
-  try {
-    fs.accessSync(directory, fs.constants.W_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
+process.exit(0);

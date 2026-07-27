@@ -29,9 +29,10 @@ npm install -g saynow     # Node >= 18
 pip install saynow        # Python >= 3.9
 ```
 
-Same CLI, same config file, zero dependencies either way. On macOS this also
-installs the [settings app](#settings-app); set `SAYNOW_NO_APP=1` to skip it.
-To try it without installing: `npx saynow "hello"`.
+Same CLI, same config file, zero dependencies either way. On macOS the
+[settings app](#settings-app) builds in the background afterwards and appears a
+few seconds later — the install itself never waits for it. `SAYNOW_NO_APP=1`
+skips it. To try saynow without installing: `npx saynow "hello"`.
 
 ## Ask, and wait for the answer
 

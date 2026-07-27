@@ -28,9 +28,12 @@ echo "Building Saynow.app $VERSION"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
+# Target the host architecture. Hardcoding arm64 silently produced a binary
+# that could not run on an Intel Mac.
+ARCH="$(uname -m)"
 swiftc \
   -O \
-  -target arm64-apple-macos14.0 \
+  -target "${ARCH}-apple-macos14.0" \
   -framework SwiftUI -framework AppKit \
   -o "$APP/Contents/MacOS/Saynow" \
   "$HERE"/Sources/*.swift

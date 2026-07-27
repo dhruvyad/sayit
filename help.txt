@@ -111,8 +111,10 @@ THE SETTINGS APP
   browsing, playing and pricing what you have already synthesised.
 
   Installing saynow on macOS installs the app too, so there is nothing else
-  to run. To opt out, install with SAYNOW_NO_APP=1 set; to add it later, or
-  after an install that skipped scripts:
+  to run. It compiles in the background after the install returns, so the
+  install itself never waits for it, and appears a few seconds later. To opt
+  out, install with SAYNOW_NO_APP=1 set; to add it later, or after an install
+  that skipped scripts:
 
     saynow app install     build it and put it in /Applications
 
