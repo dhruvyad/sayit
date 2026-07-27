@@ -34,12 +34,34 @@ OPTIONS
                          elevenlabs, openrouter). Run saynow models.
       --from <name>      Who is speaking. Shown in the bubble header, so the
                          sentence itself does not have to introduce the agent.
+      --file <path>      Show a Markdown file in the bubble. Speaks the whole
+                         document unless a text argument is also given, in
+                         which case that is what is read aloud. See DOCUMENTS.
   -r, --rate <n>         Speaking rate in words per minute. system provider
                          only. Typical range 150-350. Default: OS default.
   -s, --speed <n>        Playback speed multiplier, 0.25 to 4.0. Cloud
                          providers only; openrouter ignores it. Default: 1.
       --ask              Add a reply box to the bubble and wait for an answer,
-                         which is printed to stdout. See ASKING below. Cannot
+                         which is printed to stdout. See DOCUMENTS
+  saynow --file report.md shows a rendered Markdown document in the bubble:
+  headings, lists, tables, quotes, code, links and images.
+
+  Speech and display are deliberately not the same thing. An image cannot be
+  spoken and a URL read aloud is noise, so the spoken version keeps the prose
+  and drops the rest. Give a text argument as well and that becomes the only
+  thing said, which is usually what you want for a long report:
+
+    saynow --file news.md "Morning summary is ready"
+
+  Hover, scroll or type to hold the bubble open while you read it.
+
+  Markdown in the file is escaped before rendering and only tags saynow
+  builds itself are emitted, so a document cannot script the bubble. Links
+  are limited to http, https and mailto; images to http, https and inline
+  data. Relative image paths are resolved against the file's own directory
+  and refused if they climb out of it.
+
+ASKING below. Cannot
                          be combined with --save.
       --no-ui            Speak without showing the bubble at all.
       --save <file>      Write audio to <file> instead of playing it, and
@@ -153,6 +175,25 @@ THE BUBBLE
   to a Chromium app window, which looks the same but has a title bar. With
   neither available, saynow simply speaks.
 
+DOCUMENTS
+  saynow --file report.md shows a rendered Markdown document in the bubble:
+  headings, lists, tables, quotes, code, links and images.
+
+  Speech and display are deliberately not the same thing. An image cannot be
+  spoken and a URL read aloud is noise, so the spoken version keeps the prose
+  and drops the rest. Give a text argument as well and that becomes the only
+  thing said, which is usually what you want for a long report:
+
+    saynow --file news.md "Morning summary is ready"
+
+  Hover, scroll or type to hold the bubble open while you read it.
+
+  Markdown in the file is escaped before rendering and only tags saynow
+  builds itself are emitted, so a document cannot script the bubble. Links
+  are limited to http, https and mailto; images to http, https and inline
+  data. Relative image paths are resolved against the file's own directory
+  and refused if they climb out of it.
+
 ASKING
   saynow --ask "question" adds a reply box to that bubble and waits.
 
@@ -204,6 +245,7 @@ EXAMPLES
   saynow "the build finished"
   saynow -p openai -v nova "tests passed, 42 of 42"
   saynow --from "billing agent" --ask "drop the old table?"
+  saynow --file report.md "the weekly report is up"
   saynow -p openrouter -v Kore "a different Gemini voice"
   saynow -p openrouter -m deepgram/aura-2 -v aura-2-zeus-en "another vendor"
   saynow -r 320 "read this quickly"

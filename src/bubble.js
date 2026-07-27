@@ -6,10 +6,22 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { render as renderMarkdown } from './markdown.js';
+
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const PAGE = path.join(ROOT, 'ui', 'bubble.html');
 const SHELL_SOURCE = path.join(ROOT, 'shell', 'SaynowPanel.swift');
 
+const MIME = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+};
+
+// A document can be wider than a sentence without becoming a window.
 const WIDTH = 420;
 const INITIAL_HEIGHT = 200;
 
@@ -30,6 +42,7 @@ export async function showBubble({
   ask = false,
   rate,
   from,
+  document,
   dismissMs = 5000,
   onStop,
   speech,
@@ -52,6 +65,16 @@ export async function showBubble({
     // Who is speaking. Shown in the header so the sentence itself does not
     // have to spend words introducing the agent every single time.
     from: from || null,
+    // Rendered here rather than in the page: the renderer escapes its input
+    // and emits only tags it built, so the page never parses agent text.
+    html: document
+      ? renderMarkdown(document.markdown, {
+          asset: (src) =>
+            /^[a-z][\w+.-]*:/i.test(src)
+              ? null // an unknown scheme is dropped rather than guessed at
+              : `/asset?t=${token}&p=${encodeURIComponent(src)}`,
+        })
+      : null,
     rate: rate || 175,
     dismissMs,
     hasAudio: Boolean(audio),
@@ -117,6 +140,28 @@ export async function showBubble({
           res.end(rendered.audio);
         })
         .catch(() => res.writeHead(503).end());
+      return;
+    }
+
+    // Images referenced by the document, resolved against its own directory
+    // and refused if they climb out of it.
+    if (req.method === 'GET' && route === '/asset' && document) {
+      const rel = new URL(req.url, 'http://localhost').searchParams.get('p') ?? '';
+      const full = path.resolve(document.dir, rel);
+      if (!full.startsWith(document.dir + path.sep)) {
+        res.writeHead(403).end();
+        return;
+      }
+      try {
+        const body = fs.readFileSync(full);
+        res.writeHead(200, {
+          'Content-Type': MIME[path.extname(full).toLowerCase()] ?? 'application/octet-stream',
+          'Content-Length': body.length,
+        });
+        res.end(body);
+      } catch {
+        res.writeHead(404).end();
+      }
       return;
     }
 

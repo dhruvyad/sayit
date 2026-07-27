@@ -248,6 +248,105 @@
 
       .transcript w.said { opacity: 1; }
 
+      /* ---- rendered markdown -------------------------------------------- */
+
+      .transcript.rich > :first-child { margin-top: 0; }
+      .transcript.rich > :last-child { margin-bottom: 0; }
+
+      .rich h1, .rich h2, .rich h3, .rich h4 {
+        margin: 14px 0 6px;
+        line-height: 1.3;
+        letter-spacing: -0.012em;
+      }
+
+      .rich h1 { font-size: 17px; font-weight: 640; }
+      .rich h2 { font-size: 15.5px; font-weight: 620; }
+      .rich h3, .rich h4 { font-size: 14.5px; font-weight: 600; }
+
+      .rich p { margin: 8px 0; }
+
+      .rich ul, .rich ol { margin: 8px 0; padding-left: 18px; }
+      .rich li { margin: 3px 0; }
+      .rich li::marker { color: var(--muted); }
+
+      .rich a {
+        color: inherit;
+        text-decoration: underline;
+        text-decoration-color: rgba(245, 245, 245, 0.35);
+        text-underline-offset: 2px;
+      }
+
+      .rich a:hover { text-decoration-color: var(--text); }
+
+      .rich code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.88em;
+        padding: 1px 5px;
+        border-radius: 5px;
+        background: var(--field);
+      }
+
+      .rich pre {
+        margin: 10px 0;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: var(--field);
+        overflow-x: auto;
+      }
+
+      .rich pre code {
+        padding: 0;
+        background: none;
+        font-size: 12px;
+        line-height: 1.5;
+        /* Not spoken, so never dimmed — it is reference material, not narration. */
+        opacity: 0.85;
+      }
+
+      .rich blockquote {
+        margin: 10px 0;
+        padding-left: 11px;
+        border-left: 2px solid var(--edge);
+        color: var(--muted);
+      }
+
+      .rich img {
+        display: block;
+        max-width: 100%;
+        margin: 10px 0;
+        border-radius: 10px;
+        border: 1px solid var(--edge);
+      }
+
+      .rich hr {
+        margin: 12px 0;
+        border: none;
+        border-top: 1px solid var(--edge);
+      }
+
+      .rich table {
+        width: 100%;
+        margin: 10px 0;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      .rich th, .rich td {
+        padding: 5px 8px;
+        text-align: left;
+        border-bottom: 1px solid var(--edge);
+      }
+
+      .rich th {
+        font-weight: 600;
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .rich tr:last-child td { border-bottom: none; }
+
       /* ---- reply -------------------------------------------------------- */
 
       .reply {
@@ -484,13 +583,65 @@
 
       /* ---- transcript reveal --------------------------------------------- */
 
-      const words = state.text.split(/\s+/).filter(Boolean);
-      const nodes = words.map((word, i) => {
-        const w = document.createElement('w');
-        w.textContent = word;
-        el.transcript.append(w, i < words.length - 1 ? ' ' : '');
-        return w;
-      });
+      /**
+       * Build the transcript and collect one element per spoken word.
+       *
+       * With Markdown the transcript is structured — headings, lists, tables —
+       * so the words cannot simply be laid out in a row. Instead the rendered
+       * tree is walked and every word in every text node is wrapped, which
+       * keeps the highlight working without flattening the document. Code
+       * blocks are skipped: they are not spoken, so lighting them would
+       * desynchronise everything after.
+       */
+      const nodes = [];
+
+      function wrapWords(root) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+          acceptNode: (node) =>
+            node.parentElement.closest('pre')
+              ? NodeFilter.FILTER_REJECT
+              : NodeFilter.FILTER_ACCEPT,
+        });
+
+        const texts = [];
+        while (walker.nextNode()) texts.push(walker.currentNode);
+
+        for (const text of texts) {
+          const parts = text.data.split(/(\s+)/);
+          if (parts.length === 1 && !parts[0].trim()) continue;
+
+          const fragment = document.createDocumentFragment();
+          for (const part of parts) {
+            if (!part) continue;
+            if (!part.trim()) {
+              fragment.append(part);
+              continue;
+            }
+            const w = document.createElement('w');
+            w.textContent = part;
+            nodes.push(w);
+            fragment.append(w);
+          }
+          text.replaceWith(fragment);
+        }
+      }
+
+      if (state.html) {
+        // Built by the renderer, which escapes its input and only emits tags
+        // it constructed itself.
+        el.transcript.innerHTML = state.html;
+        el.transcript.classList.add('rich');
+        wrapWords(el.transcript);
+      } else {
+        for (const word of state.text.split(/\s+/).filter(Boolean)) {
+          const w = document.createElement('w');
+          w.textContent = word;
+          el.transcript.append(w, ' ');
+          nodes.push(w);
+        }
+      }
+
+      const words = nodes.map((n) => n.textContent);
 
       // Longer words take longer to say, so weight by length rather than
       // lighting every word for an equal slice.

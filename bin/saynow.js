@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
 import { plan, speak } from '../src/speak.js';
+import { render as renderMarkdown, speech as markdownSpeech } from '../src/markdown.js';
 import { canShowBubble, showBubble } from '../src/bubble.js';
 import { acquireLock } from '../src/queue.js';
 import * as history from '../src/history.js';
@@ -35,6 +36,7 @@ const OPTIONS = {
   provider: { type: 'string', short: 'p' },
   model: { type: 'string', short: 'm' },
   from: { type: 'string' },
+  file: { type: 'string' },
   rate: { type: 'string', short: 'r' },
   speed: { type: 'string', short: 's' },
   save: { type: 'string' },
@@ -78,6 +80,7 @@ async function main() {
     provider: values.provider,
     model: values.model,
     from: values.from,
+    file: values.file,
     rate: values.rate ? Number(values.rate) : undefined,
     speed: values.speed ? Number(values.speed) : undefined,
     save: values.save,
@@ -108,12 +111,28 @@ async function main() {
     if (command === 'app') return appCommand(rest);
   }
 
-  const text = positionals.length ? positionals.join(' ') : await readStdin();
+  // --file supplies the document; any text argument becomes the spoken line,
+  // so a long report can be shown while only a short summary is read out.
+  let document = null;
+  if (flags.file) {
+    try {
+      document = { markdown: fs.readFileSync(flags.file, 'utf8'), dir: path.dirname(path.resolve(flags.file)) };
+    } catch (err) {
+      fail(`could not read ${flags.file}: ${err.message}`);
+    }
+  }
+
+  const text = positionals.length
+    ? positionals.join(' ')
+    : document
+      ? markdownSpeech(document.markdown)
+      : await readStdin();
+
   if (!text.trim()) {
     fail('nothing to say. Pass text as an argument or pipe it on stdin.\n\nRun `saynow --help` for usage.');
   }
 
-  return speakCommand(text.trim(), flags);
+  return speakCommand(text.trim(), { ...flags, document });
 }
 
 async function readStdin() {
@@ -273,6 +292,7 @@ async function speakCommand(text, flags) {
         ask: Boolean(flags.ask),
         rate: flags.rate,
         from: flags.from,
+        document: flags.document,
         chunks: pieces,
         speech: Promise.resolve(),
         onStop: () => stop.abort(),
@@ -311,6 +331,7 @@ async function speakCommand(text, flags) {
       ask: Boolean(flags.ask),
       rate: flags.rate,
       from: flags.from,
+      document: flags.document,
       speech: handed ? Promise.resolve() : speech,
       audio: handed?.audio,
       audioType: handed?.ext === 'mp3' ? 'audio/mpeg' : 'audio/wav',

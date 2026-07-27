@@ -1,4 +1,4 @@
-.TH SAYNOW 1 "2026-07-27" "saynow 0.9.0" "User Commands"
+.TH SAYNOW 1 "2026-07-27" "saynow 0.10.0" "User Commands"
 .SH NAME
 saynow \- speak text aloud from the terminal
 .SH SYNOPSIS
@@ -71,6 +71,12 @@ Where speech is synthesised: \fBsystem\fR, \fBopenai\fR, \fBelevenlabs\fR or
 .BR \-m ", " \-\-model " " \fIid\fR
 Model id, for providers that have models. Run
 .BR "saynow models" .
+.TP
+.BI \-\-file " path"
+Show a Markdown file in the bubble. Speaks the whole document unless a text
+argument is also given, in which case that is what is read aloud. Input is
+escaped and only tags \fBsaynow\fR builds itself are emitted, so a document
+cannot script the bubble.
 .TP
 .BI \-\-from " name"
 Who is speaking. Shown in the bubble header, so the sentence itself does not
