@@ -72,6 +72,10 @@ Where speech is synthesised: \fBsystem\fR, \fBopenai\fR, \fBelevenlabs\fR or
 Model id, for providers that have models. Run
 .BR "saynow models" .
 .TP
+.BI \-\-from " name"
+Who is speaking. Shown in the bubble header, so the sentence itself does not
+have to introduce the agent. Useful when several agents share a machine.
+.TP
 .BR \-r ", " \-\-rate " " \fIn\fR
 Speaking rate in words per minute. The \fBsystem\fR provider only. Typical
 range 150 to 350.

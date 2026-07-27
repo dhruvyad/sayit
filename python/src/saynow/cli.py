@@ -45,6 +45,10 @@ def build_parser() -> argparse.ArgumentParser:
         "-p", "--provider", choices=sorted(providers.PROVIDERS), help="speech provider"
     )
     parser.add_argument("-m", "--model", help="model id (see: saynow models)")
+    parser.add_argument(
+        "--from", dest="sender", metavar="NAME",
+        help="who is speaking, shown in the bubble (npm build only)"
+    )
     parser.add_argument("-r", "--rate", type=float, help="words per minute (system provider)")
     parser.add_argument("-s", "--speed", type=float, help="speed 0.25-4.0 (cloud providers)")
     parser.add_argument("--save", metavar="FILE", help="write audio to a file instead of playing")

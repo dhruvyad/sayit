@@ -150,13 +150,42 @@
           opacity 0.5s var(--ease);
       }
 
+      /* The default is a wordmark, so it takes the small-caps treatment:
+         uppercase, tracked out, quiet. */
       .label {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
         font-size: 11.5px;
         font-weight: 500;
         letter-spacing: 0.04em;
         text-transform: uppercase;
         color: var(--muted);
         flex: 1;
+      }
+
+      /* A sender is a name, not a wordmark. Uppercase and tracking make a
+         name shouty and slower to read, so drop both and let it sit at a
+         normal size with the weight doing the work. */
+      .label.named {
+        font-size: 12.5px;
+        font-weight: 590;
+        letter-spacing: -0.005em;
+        text-transform: none;
+        color: rgba(245, 245, 245, 0.82);
+      }
+
+      /* Whatever follows the separator is context, so it recedes. */
+      .label .task {
+        font-weight: 450;
+        color: var(--muted);
+      }
+
+      .label .task::before {
+        content: '·';
+        margin: 0 5px;
+        color: rgba(245, 245, 245, 0.28);
       }
 
       .stop {
@@ -642,11 +671,36 @@
         engage();
         el.reply.classList.add('hidden');
         el.sent.classList.remove('hidden');
-        el.label.textContent = 'saynow';
+        showSender(state.from);
         setTimeout(() => close('reply', { text }), 420);
       }
 
       /* ---- wiring --------------------------------------------------------- */
+
+      // A named sender goes in the header, so the spoken sentence can be the
+      // question rather than an introduction.
+      function showSender(name) {
+        if (!name) {
+          el.label.className = 'label';
+          el.label.textContent = 'saynow';
+          return;
+        }
+        el.label.className = 'label named';
+        el.label.textContent = '';
+
+        // "agent · task" or "agent / task": the agent identifies, the task
+        // explains, so they should not carry equal weight.
+        const [, who, what] = /^(.*?)\s*[·/|—-]\s*(.+)$/.exec(name) ?? [];
+        el.label.append(who ?? name);
+        if (what) {
+          const tail = document.createElement('span');
+          tail.className = 'task';
+          tail.textContent = what;
+          el.label.append(tail);
+        }
+      }
+
+      showSender(state.from);
 
       if (state.ask) el.reply.classList.remove('hidden');
 

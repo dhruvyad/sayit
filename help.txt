@@ -32,6 +32,8 @@ OPTIONS
                          Default: system, or the configured provider.
   -m, --model <id>       Model id, for providers that have models (openai,
                          elevenlabs, openrouter). Run saynow models.
+      --from <name>      Who is speaking. Shown in the bubble header, so the
+                         sentence itself does not have to introduce the agent.
   -r, --rate <n>         Speaking rate in words per minute. system provider
                          only. Typical range 150-350. Default: OS default.
   -s, --speed <n>        Playback speed multiplier, 0.25 to 4.0. Cloud
@@ -128,7 +130,9 @@ THE SETTINGS APP
 THE BUBBLE
   Whenever saynow speaks it also shows a small bubble in the bottom-right
   corner carrying the transcript, lit word by word in time with the audio,
-  with a stop button and a dismiss button.
+  with a stop button and a dismiss button. --from names the sender in its
+  header, which is worth using when several agents share a machine: the
+  identity is then something you read rather than something you sit through.
 
   Long text is rendered a sentence at a time so speech starts while the rest
   is still being made — a few seconds rather than the twenty a whole article
@@ -192,6 +196,7 @@ LIMITATIONS
 EXAMPLES
   saynow "the build finished"
   saynow -p openai -v nova "tests passed, 42 of 42"
+  saynow --from "billing agent" --ask "drop the old table?"
   saynow -p openrouter -v Kore "a different Gemini voice"
   saynow -p openrouter -m deepgram/aura-2 -v aura-2-zeus-en "another vendor"
   saynow -r 320 "read this quickly"

@@ -29,6 +29,7 @@ export async function showBubble({
   text,
   ask = false,
   rate,
+  from,
   dismissMs = 5000,
   onStop,
   speech,
@@ -48,6 +49,9 @@ export async function showBubble({
   const state = {
     text,
     ask,
+    // Who is speaking. Shown in the header so the sentence itself does not
+    // have to spend words introducing the agent every single time.
+    from: from || null,
     rate: rate || 175,
     dismissMs,
     hasAudio: Boolean(audio),
