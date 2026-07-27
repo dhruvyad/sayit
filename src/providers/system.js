@@ -101,7 +101,7 @@ function run(cmd, args) {
         reject(
           new Error(
             `"${cmd}" not found. On Linux install espeak-ng (apt install espeak-ng), ` +
-              `or configure a cloud provider with: sayit init`,
+              `or configure a cloud provider with: saynow init`,
           ),
         );
         return;

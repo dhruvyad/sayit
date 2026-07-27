@@ -1,4 +1,4 @@
-"""Configuration storage, shared on disk with the npm build of sayit."""
+"""Configuration storage, shared on disk with the npm build of saynow."""
 
 from __future__ import annotations
 
@@ -18,10 +18,10 @@ DEFAULTS: Dict[str, Any] = {
 
 
 def config_dir() -> Path:
-    override = os.environ.get("SAYIT_CONFIG_DIR")
+    override = os.environ.get("SAYNOW_CONFIG_DIR")
     if override:
         return Path(override).expanduser().resolve()
-    return Path.home() / ".config" / "sayit"
+    return Path.home() / ".config" / "saynow"
 
 
 def config_path() -> Path:
@@ -35,7 +35,7 @@ def load() -> Dict[str, Any]:
     except FileNotFoundError:
         return dict(DEFAULTS)
     except json.JSONDecodeError as err:
-        raise SystemExit(f"sayit: config at {path} is not valid JSON: {err}")
+        raise SystemExit(f"saynow: config at {path} is not valid JSON: {err}")
     merged = dict(DEFAULTS)
     merged.update(data)
     return merged
@@ -60,10 +60,10 @@ def resolve(**flags: Any) -> Dict[str, Any]:
     config = load()
 
     env_map = {
-        "provider": "SAYIT_PROVIDER",
-        "voice": "SAYIT_VOICE",
-        "model": "SAYIT_MODEL",
-        "speed": "SAYIT_SPEED",
+        "provider": "SAYNOW_PROVIDER",
+        "voice": "SAYNOW_VOICE",
+        "model": "SAYNOW_MODEL",
+        "speed": "SAYNOW_SPEED",
     }
     for key, var in env_map.items():
         value = os.environ.get(var)

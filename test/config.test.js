@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 
-const sandbox = path.join(os.tmpdir(), `sayit-test-${process.pid}`);
-process.env.SAYIT_CONFIG_DIR = sandbox;
+const sandbox = path.join(os.tmpdir(), `saynow-test-${process.pid}`);
+process.env.SAYNOW_CONFIG_DIR = sandbox;
 
 const { CONFIG_PATH, DEFAULTS, load, redact, resolve, save } = await import('../src/config.js');
 const { get, providerIds } = await import('../src/providers/index.js');
@@ -33,13 +33,13 @@ test('resolve layers file < env < flags', () => {
 
   assert.equal(resolve().voice, 'alloy', 'file value applies');
 
-  process.env.SAYIT_VOICE = 'nova';
+  process.env.SAYNOW_VOICE = 'nova';
   assert.equal(resolve().voice, 'nova', 'env overrides file');
 
   assert.equal(resolve({ voice: 'sage' }).voice, 'sage', 'flags override env');
   assert.equal(resolve({ voice: undefined }).voice, 'nova', 'undefined flags are ignored');
 
-  delete process.env.SAYIT_VOICE;
+  delete process.env.SAYNOW_VOICE;
 });
 
 test('redact never reveals a full key', () => {

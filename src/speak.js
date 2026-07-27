@@ -26,12 +26,12 @@ export async function speak(text, flags = {}) {
     if (flags.strict) {
       throw new Error(
         `provider "${providerId}" needs a key but none was found. ` +
-          `Set ${selected.envVar} or run: sayit init`,
+          `Set ${selected.envVar} or run: saynow init`,
       );
     }
     warn(
       flags,
-      `no ${selected.envVar} found — using the offline system voice. Run \`sayit init\` to configure ${providerId}.`,
+      `no ${selected.envVar} found — using the offline system voice. Run \`saynow init\` to configure ${providerId}.`,
     );
     providerId = 'system';
     key = null;
@@ -58,7 +58,7 @@ export async function speak(text, flags = {}) {
     return { saved: path.resolve(flags.save) };
   }
 
-  const tmp = path.join(os.tmpdir(), `sayit-${process.pid}-${Date.now()}.${ext}`);
+  const tmp = path.join(os.tmpdir(), `saynow-${process.pid}-${Date.now()}.${ext}`);
   fs.writeFileSync(tmp, audio, { mode: 0o600 });
   try {
     await withQueue(flags, () => play(tmp));
@@ -79,5 +79,5 @@ async function withQueue(flags, fn) {
 }
 
 function warn(flags, message) {
-  if (!flags.quiet) process.stderr.write(`sayit: ${message}\n`);
+  if (!flags.quiet) process.stderr.write(`saynow: ${message}\n`);
 }

@@ -1,10 +1,10 @@
 {
-  "name": "sayit",
+  "name": "saynow",
   "version": "0.1.0",
   "description": "Speak text aloud from the terminal. Built for LLM agents to talk to you, with offline system TTS when no API key is configured.",
   "type": "module",
   "bin": {
-    "sayit": "bin/sayit.js"
+    "saynow": "bin/saynow.js"
   },
   "files": [
     "bin",
@@ -35,10 +35,10 @@
   "author": "Dhruv Yadav <dhruvyadav1806@gmail.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dhruvyad/sayit.git"
+    "url": "git+https://github.com/dhruvyad/saynow.git"
   },
-  "homepage": "https://github.com/dhruvyad/sayit#readme",
+  "homepage": "https://github.com/dhruvyad/saynow#readme",
   "bugs": {
-    "url": "https://github.com/dhruvyad/sayit/issues"
+    "url": "https://github.com/dhruvyad/saynow/issues"
   }
 }

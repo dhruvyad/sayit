@@ -20,17 +20,17 @@ import {
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const { version } = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 
-const HELP = `sayit ${version} — speak text aloud from the terminal
+const HELP = `saynow ${version} — speak text aloud from the terminal
 
 USAGE
-  sayit <text...>              Speak the given text
-  echo "text" | sayit          Speak text from stdin
-  sayit init                   Configure a provider and API key
-  sayit config <cmd>           Inspect or edit configuration
-  sayit voices                 List voices for the active provider
+  saynow <text...>              Speak the given text
+  echo "text" | saynow          Speak text from stdin
+  saynow init                   Configure a provider and API key
+  saynow config <cmd>           Inspect or edit configuration
+  saynow voices                 List voices for the active provider
 
 OPTIONS
-  -v, --voice <name>     Voice to use (see: sayit voices)
+  -v, --voice <name>     Voice to use (see: saynow voices)
   -p, --provider <id>    ${providerIds.join(' | ')}
   -r, --rate <n>         Words per minute (system provider only)
   -s, --speed <n>        Playback speed 0.25-4.0 (cloud providers only)
@@ -42,29 +42,29 @@ OPTIONS
       --version          Show version
 
 CONFIG
-  sayit config list            Show current settings (keys redacted)
-  sayit config get <key>
-  sayit config set <key> <val>
-  sayit config path            Print the config file location
+  saynow config list            Show current settings (keys redacted)
+  saynow config get <key>
+  saynow config set <key> <val>
+  saynow config path            Print the config file location
 
   Config lives at ${CONFIG_PATH} with 0600 permissions.
   Precedence: defaults < config file < environment < flags.
   Keys: provider, voice, model, speed, openaiApiKey, elevenlabsApiKey
-  Env:  SAYIT_PROVIDER, SAYIT_VOICE, SAYIT_MODEL, SAYIT_SPEED,
+  Env:  SAYNOW_PROVIDER, SAYNOW_VOICE, SAYNOW_MODEL, SAYNOW_SPEED,
         OPENAI_API_KEY, ELEVENLABS_API_KEY
 
 NOTES
-  With no provider configured, sayit uses the built-in OS voice — offline,
+  With no provider configured, saynow uses the built-in OS voice — offline,
   no API key, works out of the box. Configure a cloud provider for better
   audio quality.
 
   Concurrent invocations are queued so speech never overlaps.
 
 EXAMPLES
-  sayit "the build finished"
-  sayit -p openai -v nova "tests passed, 42 of 42"
-  sayit --save note.mp3 "long form text"
-  npm test 2>&1 | tail -1 | sayit
+  saynow "the build finished"
+  saynow -p openai -v nova "tests passed, 42 of 42"
+  saynow --save note.mp3 "long form text"
+  npm test 2>&1 | tail -1 | saynow
 `;
 
 const OPTIONS = {
@@ -92,7 +92,7 @@ async function main() {
       args: process.argv.slice(2),
     }));
   } catch (err) {
-    fail(`${err.message}\n\nRun \`sayit --help\` for usage.`);
+    fail(`${err.message}\n\nRun \`saynow --help\` for usage.`);
   }
 
   if (values.version) return void console.log(version);
@@ -128,7 +128,7 @@ async function main() {
 
   const text = positionals.length ? positionals.join(' ') : await readStdin();
   if (!text.trim()) {
-    fail('nothing to say. Pass text as an argument or pipe it on stdin.\n\nRun `sayit --help` for usage.');
+    fail('nothing to say. Pass text as an argument or pipe it on stdin.\n\nRun `saynow --help` for usage.');
   }
 
   const result = await speak(text.trim(), flags);
@@ -145,7 +145,7 @@ async function readStdin() {
 async function initCommand() {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   try {
-    console.log('Configure sayit. Press enter to keep the current value.\n');
+    console.log('Configure saynow. Press enter to keep the current value.\n');
     for (const id of providerIds) {
       const p = providers[id];
       console.log(`  ${id.padEnd(12)} ${p.label}`);
@@ -179,7 +179,7 @@ async function initCommand() {
 
     if (!provider.speaksDirectly && !apiKey(chosen, config)) {
       console.log(
-        `\nNo key stored and $${provider.envVar} is unset — sayit will use the offline system voice until one is available.`,
+        `\nNo key stored and $${provider.envVar} is unset — saynow will use the offline system voice until one is available.`,
       );
     }
   } finally {
@@ -203,13 +203,13 @@ function configCommand([action, key, ...valueParts]) {
       const width = Math.max(...rows.map(([k]) => k.length));
       for (const [k, v] of rows) console.log(`${k.padEnd(width)}  ${v}`);
       if (!fs.existsSync(CONFIG_PATH)) {
-        console.log(`\n(no config file yet — these are defaults. Run \`sayit init\`.)`);
+        console.log(`\n(no config file yet — these are defaults. Run \`saynow init\`.)`);
       }
       return;
     }
 
     case 'get': {
-      if (!key) fail('usage: sayit config get <key>');
+      if (!key) fail('usage: saynow config get <key>');
       const value = config[key];
       if (value === undefined) fail(`no such key: ${key}`);
       return void console.log(SECRET_KEYS.has(key) ? redact(value) : value);
@@ -217,7 +217,7 @@ function configCommand([action, key, ...valueParts]) {
 
     case 'set': {
       const value = valueParts.join(' ');
-      if (!key || !value) fail('usage: sayit config set <key> <value>');
+      if (!key || !value) fail('usage: saynow config set <key> <value>');
       if (key === 'provider' && !providerIds.includes(value)) {
         fail(`unknown provider "${value}". Available: ${providerIds.join(', ')}`);
       }
@@ -250,11 +250,11 @@ async function voicesCommand(flags) {
 }
 
 function fail(message) {
-  process.stderr.write(`sayit: ${message}\n`);
+  process.stderr.write(`saynow: ${message}\n`);
   process.exit(1);
 }
 
 main().catch((err) => {
-  process.stderr.write(`sayit: ${err.message}\n`);
+  process.stderr.write(`saynow: ${err.message}\n`);
   process.exit(1);
 });

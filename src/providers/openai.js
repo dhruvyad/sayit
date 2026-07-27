@@ -50,7 +50,7 @@ async function describeError(res, provider) {
   }
 
   if (res.status === 401) {
-    return `${provider} rejected the API key (401). Check it with: sayit config list`;
+    return `${provider} rejected the API key (401). Check it with: saynow config list`;
   }
   if (res.status === 429) {
     return `${provider} rate limited or out of quota (429). ${detail}`;

@@ -23,7 +23,7 @@ PLAYERS = {
     ],
 }
 
-LOCK_PATH = Path(tempfile.gettempdir()) / "sayit.lock"
+LOCK_PATH = Path(tempfile.gettempdir()) / "saynow.lock"
 STALE_SECONDS = 300
 
 
@@ -39,13 +39,13 @@ def play(path: str) -> None:
     if not found:
         tried = ", ".join(n for n, _ in PLAYERS.get(sys.platform, [])) or sys.platform
         raise SystemExit(
-            f"sayit: no audio player found (looked for: {tried}).\n"
+            f"saynow: no audio player found (looked for: {tried}).\n"
             "Install one, or use --save <file> to write the audio instead."
         )
     name, args = found
     result = subprocess.run([name, *args(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if result.returncode != 0:
-        raise SystemExit(f"sayit: {name} exited with code {result.returncode}")
+        raise SystemExit(f"saynow: {name} exited with code {result.returncode}")
 
 
 def _alive(pid: int) -> bool:
@@ -90,7 +90,7 @@ def queued(enabled: bool = True, timeout: float = 120.0):
             _clear_if_stale()
             if time.time() > deadline:
                 raise SystemExit(
-                    f"sayit: timed out waiting for another sayit to finish (lock: {LOCK_PATH}).\n"
+                    f"saynow: timed out waiting for another saynow to finish (lock: {LOCK_PATH}).\n"
                     "Pass --no-queue to speak immediately without waiting."
                 )
             time.sleep(0.06)

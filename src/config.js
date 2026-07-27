@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-export const CONFIG_DIR = process.env.SAYIT_CONFIG_DIR
-  ? path.resolve(process.env.SAYIT_CONFIG_DIR)
-  : path.join(os.homedir(), '.config', 'sayit');
+export const CONFIG_DIR = process.env.SAYNOW_CONFIG_DIR
+  ? path.resolve(process.env.SAYNOW_CONFIG_DIR)
+  : path.join(os.homedir(), '.config', 'saynow');
 
 export const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
 
@@ -48,10 +48,10 @@ export function save(config) {
 export function resolve(flags = {}) {
   const file = load();
   const env = {};
-  if (process.env.SAYIT_PROVIDER) env.provider = process.env.SAYIT_PROVIDER;
-  if (process.env.SAYIT_VOICE) env.voice = process.env.SAYIT_VOICE;
-  if (process.env.SAYIT_MODEL) env.model = process.env.SAYIT_MODEL;
-  if (process.env.SAYIT_SPEED) env.speed = Number(process.env.SAYIT_SPEED);
+  if (process.env.SAYNOW_PROVIDER) env.provider = process.env.SAYNOW_PROVIDER;
+  if (process.env.SAYNOW_VOICE) env.voice = process.env.SAYNOW_VOICE;
+  if (process.env.SAYNOW_MODEL) env.model = process.env.SAYNOW_MODEL;
+  if (process.env.SAYNOW_SPEED) env.speed = Number(process.env.SAYNOW_SPEED);
 
   const cli = Object.fromEntries(
     Object.entries(flags).filter(([, v]) => v !== undefined),

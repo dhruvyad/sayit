@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "sayit"
+name = "saynow"
 version = "0.1.0"
 description = "Speak text aloud from the terminal. Built for LLM agents to talk to you, with offline system TTS when no API key is configured."
 readme = "README.md"
@@ -26,12 +26,12 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/dhruvyad/sayit"
-Repository = "https://github.com/dhruvyad/sayit"
-Issues = "https://github.com/dhruvyad/sayit/issues"
+Homepage = "https://github.com/dhruvyad/saynow"
+Repository = "https://github.com/dhruvyad/saynow"
+Issues = "https://github.com/dhruvyad/saynow/issues"
 
 [project.scripts]
-sayit = "sayit.cli:main"
+saynow = "saynow.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/sayit"]
+packages = ["src/saynow"]

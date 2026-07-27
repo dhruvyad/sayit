@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const LOCK_PATH = path.join(os.tmpdir(), 'sayit.lock');
+const LOCK_PATH = path.join(os.tmpdir(), 'saynow.lock');
 const POLL_MS = 60;
 const STALE_MS = 5 * 60 * 1000;
 
@@ -40,7 +40,7 @@ function clearIfStale() {
 }
 
 /**
- * Serialize playback across concurrent `sayit` invocations. An agent firing
+ * Serialize playback across concurrent `saynow` invocations. An agent firing
  * three updates in a row should hear three sentences, not one muddle.
  *
  * Returns a release function. Always call it in a finally block.
@@ -65,7 +65,7 @@ export async function acquire({ timeoutMs = 120_000 } = {}) {
       clearIfStale();
       if (Date.now() > deadline) {
         throw new Error(
-          `timed out waiting for another sayit to finish speaking (lock: ${LOCK_PATH}).\n` +
+          `timed out waiting for another saynow to finish speaking (lock: ${LOCK_PATH}).\n` +
             `Pass --no-queue to speak immediately without waiting.`,
         );
       }

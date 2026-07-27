@@ -42,7 +42,7 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
 def get(provider_id: str) -> Dict[str, Any]:
     if provider_id not in PROVIDERS:
         raise SystemExit(
-            f"sayit: unknown provider \"{provider_id}\". "
+            f"saynow: unknown provider \"{provider_id}\". "
             f"Available: {', '.join(PROVIDERS)}"
         )
     return PROVIDERS[provider_id]
@@ -81,7 +81,7 @@ def _system_command(text: str, voice: Optional[str], rate: Optional[float]) -> L
         script += f"$s.Speak('{escaped}')"
         return ["powershell", "-NoProfile", "-Command", script]
 
-    raise SystemExit(f"sayit: no system speech backend known for platform \"{sys.platform}\"")
+    raise SystemExit(f"saynow: no system speech backend known for platform \"{sys.platform}\"")
 
 
 def speak_system(text: str, voice: Optional[str] = None, rate: Optional[float] = None) -> None:
@@ -90,11 +90,11 @@ def speak_system(text: str, voice: Optional[str] = None, rate: Optional[float] =
         result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except FileNotFoundError:
         raise SystemExit(
-            f"sayit: \"{cmd[0]}\" not found. On Linux install espeak-ng "
-            "(apt install espeak-ng), or configure a cloud provider with: sayit init"
+            f"saynow: \"{cmd[0]}\" not found. On Linux install espeak-ng "
+            "(apt install espeak-ng), or configure a cloud provider with: saynow init"
         )
     if result.returncode != 0:
-        raise SystemExit(f"sayit: {cmd[0]} exited with code {result.returncode}")
+        raise SystemExit(f"saynow: {cmd[0]} exited with code {result.returncode}")
 
 
 def system_voices() -> List[Tuple[str, str, str]]:
@@ -140,13 +140,13 @@ def _post(url: str, headers: Dict[str, str], body: Dict[str, Any], provider: str
         detail = err.read().decode("utf-8", "replace")[:300]
         if err.code == 401:
             raise SystemExit(
-                f"sayit: {provider} rejected the API key (401). Check it with: sayit config list"
+                f"saynow: {provider} rejected the API key (401). Check it with: saynow config list"
             )
         if err.code == 429:
-            raise SystemExit(f"sayit: {provider} rate limited or out of quota (429). {detail}")
-        raise SystemExit(f"sayit: {provider} request failed ({err.code}). {detail}")
+            raise SystemExit(f"saynow: {provider} rate limited or out of quota (429). {detail}")
+        raise SystemExit(f"saynow: {provider} request failed ({err.code}). {detail}")
     except urllib.error.URLError as err:
-        raise SystemExit(f"sayit: could not reach {provider}: {err.reason}")
+        raise SystemExit(f"saynow: could not reach {provider}: {err.reason}")
 
 
 def synthesize_openai(

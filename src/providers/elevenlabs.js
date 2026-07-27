@@ -38,7 +38,7 @@ export async function synthesize(text, { apiKey, voice, model, speed } = {}) {
     }
     if (res.status === 401) {
       return Promise.reject(
-        new Error('ElevenLabs rejected the API key (401). Check it with: sayit config list'),
+        new Error('ElevenLabs rejected the API key (401). Check it with: saynow config list'),
       );
     }
     throw new Error(`ElevenLabs request failed (${res.status}). ${detail}`);

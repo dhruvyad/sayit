@@ -1,4 +1,4 @@
-"""Command-line interface for sayit."""
+"""Command-line interface for saynow."""
 
 from __future__ import annotations
 
@@ -16,40 +16,40 @@ SUBCOMMANDS = {"init", "config", "voices", "help"}
 
 EPILOG = f"""
 config:
-  sayit config list            Show current settings (keys redacted)
-  sayit config get <key>
-  sayit config set <key> <val>
-  sayit config path            Print the config file location
+  saynow config list            Show current settings (keys redacted)
+  saynow config get <key>
+  saynow config set <key> <val>
+  saynow config path            Print the config file location
 
   Config lives at {cfg.config_path()} with 0600 permissions.
   Precedence: defaults < config file < environment < flags.
   Keys: provider, voice, model, speed, openaiApiKey, elevenlabsApiKey
-  Env:  SAYIT_PROVIDER, SAYIT_VOICE, SAYIT_MODEL, SAYIT_SPEED,
+  Env:  SAYNOW_PROVIDER, SAYNOW_VOICE, SAYNOW_MODEL, SAYNOW_SPEED,
         OPENAI_API_KEY, ELEVENLABS_API_KEY
 
 notes:
-  With no provider configured, sayit uses the built-in OS voice — offline,
+  With no provider configured, saynow uses the built-in OS voice — offline,
   no API key, works out of the box. Configure a cloud provider for better
   audio quality. Concurrent invocations are queued so speech never overlaps.
 
 examples:
-  sayit "the build finished"
-  sayit -p openai -v nova "tests passed, 42 of 42"
-  sayit --save note.mp3 "long form text"
-  pytest 2>&1 | tail -1 | sayit
+  saynow "the build finished"
+  saynow -p openai -v nova "tests passed, 42 of 42"
+  saynow --save note.mp3 "long form text"
+  pytest 2>&1 | tail -1 | saynow
 """
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="sayit",
+        prog="saynow",
         description="Speak text aloud from the terminal.",
         epilog=EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
     )
     parser.add_argument("text", nargs="*", help="text to speak (or pipe it on stdin)")
-    parser.add_argument("-v", "--voice", help="voice to use (see: sayit voices)")
+    parser.add_argument("-v", "--voice", help="voice to use (see: saynow voices)")
     parser.add_argument(
         "-p", "--provider", choices=sorted(providers.PROVIDERS), help="speech provider"
     )
@@ -108,20 +108,20 @@ def speak(text: str, args: argparse.Namespace) -> int:
     if not selected["speaks_directly"] and not key:
         if args.strict:
             raise SystemExit(
-                f"sayit: provider \"{provider_id}\" needs a key but none was found. "
-                f"Set {selected['env_var']} or run: sayit init"
+                f"saynow: provider \"{provider_id}\" needs a key but none was found. "
+                f"Set {selected['env_var']} or run: saynow init"
             )
         warn(
             args,
             f"no {selected['env_var']} found — using the offline system voice. "
-            f"Run `sayit init` to configure {provider_id}.",
+            f"Run `saynow init` to configure {provider_id}.",
         )
         provider_id, key = "system", None
 
     if provider_id == "system":
         if args.save:
             raise SystemExit(
-                "sayit: --save is not supported by the system provider. "
+                "saynow: --save is not supported by the system provider. "
                 "Configure openai or elevenlabs to write audio files."
             )
         with queued(enabled=not args.no_queue):
@@ -142,7 +142,7 @@ def speak(text: str, args: argparse.Namespace) -> int:
             print(os.path.abspath(args.save))
         return 0
 
-    tmp = Path(tempfile.gettempdir()) / f"sayit-{os.getpid()}.mp3"
+    tmp = Path(tempfile.gettempdir()) / f"saynow-{os.getpid()}.mp3"
     tmp.write_bytes(audio)
     os.chmod(tmp, 0o600)
     try:
@@ -154,7 +154,7 @@ def speak(text: str, args: argparse.Namespace) -> int:
 
 
 def init_command() -> int:
-    print("Configure sayit. Press enter to keep the current value.\n")
+    print("Configure saynow. Press enter to keep the current value.\n")
     for name, meta in providers.PROVIDERS.items():
         print(f"  {name:<12} {meta['label']}")
     print()
@@ -185,7 +185,7 @@ def init_command() -> int:
     if not meta["speaks_directly"] and not cfg.api_key(chosen, config):
         print(
             f"\nNo key stored and ${meta['env_var']} is unset — "
-            "sayit will use the offline system voice until one is available."
+            "saynow will use the offline system voice until one is available."
         )
     return 0
 
@@ -204,21 +204,21 @@ def config_command(rest: List[str]) -> int:
             shown = cfg.redact(value) if key in cfg.SECRET_KEYS else value
             print(f"{key:<{width}}  {shown}")
         if not cfg.config_path().exists():
-            print("\n(no config file yet — these are defaults. Run `sayit init`.)")
+            print("\n(no config file yet — these are defaults. Run `saynow init`.)")
         return 0
 
     if action == "get":
         if len(rest) < 2:
-            raise SystemExit("sayit: usage: sayit config get <key>")
+            raise SystemExit("saynow: usage: saynow config get <key>")
         key = rest[1]
         if key not in config:
-            raise SystemExit(f"sayit: no such key: {key}")
+            raise SystemExit(f"saynow: no such key: {key}")
         print(cfg.redact(config[key]) if key in cfg.SECRET_KEYS else config[key])
         return 0
 
     if action == "set":
         if len(rest) < 3:
-            raise SystemExit("sayit: usage: sayit config set <key> <value>")
+            raise SystemExit("saynow: usage: saynow config set <key> <value>")
         key, value = rest[1], " ".join(rest[2:])
         if key == "provider":
             providers.get(value)
@@ -228,7 +228,7 @@ def config_command(rest: List[str]) -> int:
         print(f"{key} = {shown}")
         return 0
 
-    raise SystemExit(f"sayit: unknown config command \"{action}\". Use: list, get, set, path")
+    raise SystemExit(f"saynow: unknown config command \"{action}\". Use: list, get, set, path")
 
 
 def voices_command(args: argparse.Namespace) -> int:
@@ -248,7 +248,7 @@ def voices_command(args: argparse.Namespace) -> int:
 
 def warn(args: argparse.Namespace, message: str) -> None:
     if not args.quiet:
-        print(f"sayit: {message}", file=sys.stderr)
+        print(f"saynow: {message}", file=sys.stderr)
 
 
 if __name__ == "__main__":
