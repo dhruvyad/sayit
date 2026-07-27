@@ -98,7 +98,15 @@ It is a separate process from the CLI — they meet only at
 
 ## Use it from an agent
 
-Add this to your `CLAUDE.md`, `AGENTS.md`, or equivalent:
+For Claude Code, install the plugin — it ships a skill that teaches Claude when
+to speak, so you do not have to explain it in every project:
+
+```
+/plugin marketplace add dhruvyad/saynow
+/plugin install saynow@saynow
+```
+
+Otherwise add this to your `CLAUDE.md`, `AGENTS.md`, or equivalent:
 
 ```markdown
 You can speak to the user out loud with `saynow "<text>"`, and ask a blocking

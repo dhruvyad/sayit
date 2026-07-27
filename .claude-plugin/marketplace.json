@@ -1,0 +1,17 @@
+{
+  "name": "saynow",
+  "description": "Plugins for saynow, the CLI that lets Claude speak to you out loud and wait for your answer.",
+  "owner": {
+    "name": "Dhruv Yadav"
+  },
+  "plugins": [
+    {
+      "name": "saynow",
+      "source": "./plugin",
+      "description": "Let Claude speak to you out loud and wait for your answer, instead of leaving questions in a terminal you are not watching.",
+      "author": {
+        "name": "Dhruv Yadav"
+      }
+    }
+  ]
+}
