@@ -1,4 +1,4 @@
-.TH SAYNOW 1 "2026-07-27" "saynow 0.11.0" "User Commands"
+.TH SAYNOW 1 "2026-07-28" "saynow 0.12.0" "User Commands"
 .SH NAME
 saynow \- speak text aloud from the terminal
 .SH SYNOPSIS
@@ -172,9 +172,10 @@ answer=$(saynow --ask "Should I drop the old table?")
 .EE
 .RE
 .PP
-It waits indefinitely once you interact with it. If you do not, it fades out
-five seconds after the audio ends and exits 2, which lets a caller tell
-"they said no" apart from "nobody was there".
+It waits indefinitely once you reach for it \(em the pointer on the bubble or a
+hand in the reply box \(em and nothing takes it away on a clock. If you do not
+reach for it, it fades out five seconds after the audio ends and exits 2, which
+lets a caller tell "they said no" apart from "nobody was there".
 .SH CONFIGURATION
 Settings live in \fI~/.config/saynow/config.json\fR, created with mode 0600.
 Precedence, from lowest to highest, is built\-in defaults, the config file,
