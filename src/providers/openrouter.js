@@ -106,8 +106,11 @@ export async function lookupCost(generationId, apiKey) {
     );
     if (!res.ok) return null;
     const { data } = await res.json();
-    const cost = Number(data?.total_cost);
-    return Number.isFinite(cost) ? cost : null;
+    // OpenRouter reports total_cost as null for the first few seconds after a
+    // generation. Number(null) is 0, which is finite — coercing here would
+    // stamp a permanent "free" on a clip that simply had not been priced yet.
+    const cost = data?.total_cost;
+    return typeof cost === 'number' && Number.isFinite(cost) ? cost : null;
   } catch {
     return null;
   }

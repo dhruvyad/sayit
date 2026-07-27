@@ -104,6 +104,9 @@ final class HistoryStore: ObservableObject {
             let entry = payload["data"] as? [String: Any]
         else { return nil }
 
+        // null for the first few seconds after a generation; treat that as
+        // "not yet priced". A real zero is kept — a generation that produced
+        // no audio genuinely costs nothing.
         return entry["total_cost"] as? Double
     }
 

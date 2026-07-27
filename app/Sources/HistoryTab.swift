@@ -54,6 +54,13 @@ struct HistoryTab: View {
             await player.loadDurations(for: store.clips.map { (id: $0.id, url: $0.url) })
             if let key = config.key(for: "openrouter") {
                 await store.resolveCosts(key: key)
+                // A clip made seconds ago genuinely has no price yet —
+                // OpenRouter reports null for the first few seconds — so ask
+                // once more rather than leaving a dash on the newest row.
+                if store.clips.contains(where: { $0.cost == nil && $0.generationId != nil }) {
+                    try? await Task.sleep(for: .seconds(8))
+                    await store.resolveCosts(key: key)
+                }
             }
         }
     }

@@ -45,7 +45,15 @@ const OPTIONS = {
   version: { type: 'boolean' },
 };
 
-const SUBCOMMANDS = new Set(['init', 'config', 'voices', 'models', 'history', 'help']);
+const SUBCOMMANDS = new Set([
+  'init',
+  'config',
+  'voices',
+  'models',
+  'history',
+  'app',
+  'help',
+]);
 
 async function main() {
   let values;
@@ -94,6 +102,7 @@ async function main() {
     if (command === 'voices') return voicesCommand(flags);
     if (command === 'models') return modelsCommand();
     if (command === 'history') return historyCommand(rest);
+    if (command === 'app') return appCommand(rest);
   }
 
   const text = positionals.length ? positionals.join(' ') : await readStdin();
@@ -364,6 +373,47 @@ async function historyCommand([action, ...rest]) {
     default:
       fail(`unknown history command "${action}". Use: list, open, path, clear`);
   }
+}
+
+/**
+ * Build and install the macOS settings app.
+ *
+ * The app ships as source and is compiled here rather than shipped as a
+ * binary: a prebuilt one would need a Developer ID and notarisation to run on
+ * anyone else's machine, and per-platform packages to distribute. Compiling on
+ * demand keeps the package small and needs nothing but the command line tools.
+ */
+function appCommand([action = 'install']) {
+  const source = path.join(ROOT, 'app');
+  const build = path.join(source, 'build.sh');
+
+  if (action === 'path') return void console.log(source);
+
+  if (!['install', 'build'].includes(action)) {
+    fail(`unknown app command "${action}". Use: install, build, path`);
+  }
+
+  if (process.platform !== 'darwin') {
+    fail('the settings app is macOS only. The command line tool works everywhere.');
+  }
+  if (!fs.existsSync(build)) {
+    fail(
+      'the app sources are missing from this install.\n' +
+        'Clone the repository and run ./app/build.sh --install instead:\n' +
+        '  https://github.com/dhruvyad/saynow',
+    );
+  }
+  if (spawnSync('which', ['swiftc'], { stdio: 'ignore' }).status !== 0) {
+    fail(
+      'building the app needs the Xcode command line tools:\n' +
+        '  xcode-select --install',
+    );
+  }
+
+  const result = spawnSync('bash', [build, ...(action === 'install' ? ['--install'] : [])], {
+    stdio: 'inherit',
+  });
+  if (result.status !== 0) fail('the app failed to build.');
 }
 
 function fail(message) {

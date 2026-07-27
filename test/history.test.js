@@ -102,3 +102,38 @@ test('a clip without a generation id is skipped rather than queried', async () =
   assert.equal(resolved, 0);
   assert.equal(called, false, 'nothing to look up means no request');
 });
+
+test('a price that has not landed yet is not recorded as free', async () => {
+  // OpenRouter reports total_cost as null for the first few seconds after a
+  // generation. Number(null) is 0 and finite, so coercing it stamped a
+  // permanent $0.0000 on the newest clip and it was never asked about again.
+  fs.rmSync(sandbox, { recursive: true, force: true });
+  history.record(clip({ generationId: 'gen-too-fresh' }));
+
+  const resolved = await history.resolveCosts(async () => null);
+  assert.equal(resolved, 0, 'an unpriced clip must stay unresolved');
+  assert.equal(history.readIndex()[0].cost, null);
+
+  // ...and must be retried once the price exists.
+  const second = await history.resolveCosts(async () => 0.0031);
+  assert.equal(second, 1, 'the retry must pick it up');
+  assert.equal(history.readIndex()[0].cost, 0.0031);
+});
+
+test('a genuine zero is a price, not a retry', async () => {
+  // A generation that produced no audio really does cost nothing. Treating
+  // zero as "unresolved" would re-query those clips on every listing forever.
+  fs.rmSync(sandbox, { recursive: true, force: true });
+  history.record(clip({ generationId: 'gen-free' }));
+
+  await history.resolveCosts(async () => 0);
+  assert.equal(history.readIndex()[0].cost, 0);
+
+  let asked = false;
+  const again = await history.resolveCosts(async () => {
+    asked = true;
+    return 0.5;
+  });
+  assert.equal(again, 0, 'a priced clip must not be asked about again');
+  assert.equal(asked, false);
+});

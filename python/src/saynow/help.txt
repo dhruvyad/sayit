@@ -21,6 +21,7 @@ COMMANDS
   history open [n]       Play an archived clip, default the newest
   history path           Print the archive directory
   history clear          Delete every archived clip
+  app install            Build and install the macOS settings app
   help                   Show this text
 
 OPTIONS
@@ -103,6 +104,19 @@ BEHAVIOUR
              the text from stdin.
   Literals   To speak a word that is also a command name, pipe it instead:
              echo "config" | saynow
+
+THE SETTINGS APP
+  macOS only. A small window for the things a flag is a clumsy way to set:
+  picking a model from the live catalogue with prices, storing keys, and
+  browsing, playing and pricing what you have already synthesised.
+
+    saynow app install     build it and put it in /Applications
+
+  It compiles from source on demand and needs the Xcode command line tools
+  (xcode-select --install). It ships as source rather than a binary because a
+  prebuilt app needs a Developer ID and notarisation to run on anyone else's
+  machine. It is a separate process from this tool and they meet only at the
+  config file, so either works without the other.
 
 THE BUBBLE
   Whenever saynow speaks it also shows a small bubble in the bottom-right

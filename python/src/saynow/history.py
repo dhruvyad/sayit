@@ -106,6 +106,8 @@ def _generation_id(entry: Dict[str, Any]) -> Optional[str]:
 def resolve_costs(lookup) -> int:
     """Fill in prices for clips that have a generation id but no cost yet."""
     entries = read_index()
+    # Null means "not priced yet"; zero is a real price, which a generation
+    # that produced no audio genuinely has.
     pending = [e for e in entries if _generation_id(e) and e.get("cost") is None]
     if not pending:
         return 0

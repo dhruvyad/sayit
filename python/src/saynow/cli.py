@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 from . import __version__, config as cfg, history, providers
 from .audio import play, queued
 
-SUBCOMMANDS = {"init", "config", "voices", "models", "history", "help"}
+SUBCOMMANDS = {"init", "config", "voices", "models", "history", "app", "help"}
 
 
 def help_text() -> str:
@@ -84,6 +84,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             return models_command()
         if command == "history":
             return history_command(rest)
+        if command == "app":
+            return app_command()
 
     text = " ".join(args.text) if args.text else read_stdin()
     if not text.strip():
@@ -340,6 +342,24 @@ def history_command(rest: List[str]) -> int:
         return 0
 
     raise SystemExit(f'saynow: unknown history command "{action}". Use: list, open, path, clear')
+
+
+def app_command() -> int:
+    """The app ships with the npm build, which carries the Swift sources."""
+    if sys.platform != "darwin":
+        raise SystemExit(
+            "saynow: the settings app is macOS only. "
+            "The command line tool works everywhere."
+        )
+    print(
+        "The settings app ships with the npm build, which carries its sources:\n"
+        "  npm install -g saynow && saynow app install\n"
+        "\nOr build it from a clone:\n"
+        "  git clone https://github.com/dhruvyad/saynow\n"
+        "  ./saynow/app/build.sh --install\n"
+        "\nIt reads the same config file as this build, so settings carry over."
+    )
+    return 0
 
 
 def warn(args: argparse.Namespace, message: str) -> None:

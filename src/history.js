@@ -102,6 +102,9 @@ const generationIdOf = (entry) => entry.generationId ?? entry.generation_id ?? n
 
 export async function resolveCosts(lookup) {
   const entries = readIndex();
+  // Null means "not priced yet"; zero is a real price, which a generation
+  // that produced no audio genuinely has. Retrying zeros would re-query them
+  // on every listing, forever.
   const pending = entries.filter((e) => generationIdOf(e) && e.cost == null);
   if (!pending.length) return 0;
 

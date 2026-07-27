@@ -121,8 +121,13 @@ model from the live OpenRouter catalogue, storing keys, and browsing what you
 have already synthesised.
 
 ```bash
-./app/build.sh --install     # builds Saynow.app and puts it in /Applications
+saynow app install     # builds Saynow.app and puts it in /Applications
 ```
+
+It compiles from source on first run, so it needs the Xcode command line tools
+(`xcode-select --install`). It ships as source rather than a prebuilt binary
+because a prebuilt app needs a Developer ID and notarisation to run anywhere
+else.
 
 It is a separate process from the CLI and they meet only at
 `~/.config/saynow/config.json`, so either works without the other. Building it
