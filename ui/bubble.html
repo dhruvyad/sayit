@@ -825,11 +825,20 @@
         clearTimeout(dismissTimer);
         if (holding()) return;
 
+        // Snap back to full width with the transition off, then force a
+        // reflow before turning it on again. Without the reflow the browser
+        // coalesces both writes into one transition, and since the bar was
+        // left at scaleX(0) by the previous countdown it animates 0 to 0 —
+        // invisible. That is why a second hover-out showed no bar at all.
         el.timer.classList.remove('cancelled');
-        el.timer.classList.add('running');
-        el.timer.style.transitionDuration = ms + 'ms';
+        el.timer.style.transition = 'none';
+        el.timer.style.opacity = '1';
         el.timer.style.transform = 'scaleX(1)';
-        requestAnimationFrame(() => (el.timer.style.transform = 'scaleX(0)'));
+        void el.timer.offsetWidth;
+
+        el.timer.style.transition = `transform ${ms}ms linear`;
+        el.timer.style.transform = 'scaleX(0)';
+
         dismissTimer = setTimeout(() => close('dismiss'), ms);
       }
 
@@ -837,7 +846,10 @@
       function engage({ permanent = false } = {}) {
         if (permanent) committed = true;
         clearTimeout(dismissTimer);
-        el.timer.classList.add('cancelled');
+        // Fade the bar out where it stands rather than snapping it away, and
+        // leave it ready to be reset when the countdown next starts.
+        el.timer.style.transition = 'opacity 0.18s ease';
+        el.timer.style.opacity = '0';
       }
 
       /** Speech ended, or the pointer left: start counting down again. */
