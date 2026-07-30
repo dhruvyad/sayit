@@ -90,6 +90,48 @@
         }
       }
 
+      /* ---- resize handle ------------------------------------------------ */
+
+      /* A strip along the top edge, inside the bubble's own padding so it
+         never sits on a button. Drag it up for more of the transcript, down
+         for less. */
+      .grip {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 12px;
+        cursor: ns-resize;
+        /* Or the drag is claimed as a scroll before the first move arrives. */
+        touch-action: none;
+      }
+
+      .grip::after {
+        content: '';
+        display: block;
+        width: 32px;
+        height: 3px;
+        margin: 4px auto 0;
+        border-radius: 2px;
+        background: rgba(245, 245, 245, 0.22);
+        opacity: 0;
+        transition: opacity 0.16s ease, background 0.16s ease;
+      }
+
+      /* Only once the pointer is on the bubble: a bar drawn across the top of
+         every announcement reads as part of the design rather than as
+         something to take hold of. */
+      .bubble:hover .grip::after { opacity: 1; }
+
+      .grip:hover::after,
+      .bubble.resizing .grip::after {
+        opacity: 1;
+        background: rgba(245, 245, 245, 0.42);
+      }
+
+      /* A drag that crosses the transcript would otherwise select it. */
+      .bubble.resizing { user-select: none; }
+
       /* ---- header ------------------------------------------------------ */
 
       .head {
@@ -140,6 +182,10 @@
         50%  { transform: scaleY(0.92); }
       }
 
+      /* Hold the waveform still while the voice is, rather than letting it
+         carry on breathing over silence. */
+      .bubble.paused .mark i { animation-play-state: paused; }
+
       /* Settle to a flat, quiet line once the voice stops. */
       .bubble.done .mark i {
         animation: none;
@@ -188,7 +234,7 @@
         color: rgba(245, 245, 245, 0.28);
       }
 
-      .stop {
+      .chip {
         display: grid;
         place-items: center;
         width: 22px;
@@ -202,19 +248,22 @@
         flex-shrink: 0;
       }
 
-      .stop:hover { background: rgba(255, 255, 255, 0.13); }
-      .stop:active { transform: scale(0.92); }
+      .chip:hover { background: rgba(255, 255, 255, 0.13); }
+      .chip:active { transform: scale(0.92); }
 
-      .stop svg { width: 8px; height: 8px; fill: currentColor; }
+      .chip svg { width: 8px; height: 8px; fill: currentColor; }
 
-      /* Stop is only meaningful while audio is playing; dismiss always is. */
-      .bubble.done .stop:not(.close) {
-        opacity: 0;
-        pointer-events: none;
-        width: 0;
-        margin-left: -7px;
-        transition: opacity 0.2s ease, width 0.24s var(--ease), margin 0.24s var(--ease);
-      }
+      /* There is nothing to pause when the page does not own the audio, so the
+         button is not shown at all rather than shown and ignored. */
+      .chip.hidden { display: none; }
+
+      /* One button, two faces: bars while it speaks, a triangle while it does
+         not. The triangle is nudged right because its visual centre sits left
+         of its bounding box. It stays after the voice stops, where it means
+         play it again — the same thing clicking a word does. */
+      .transport .tri { display: none; }
+      .bubble.paused .transport .bars { display: none; }
+      .bubble.paused .transport .tri { display: block; margin-left: 1px; }
 
       .close svg.x {
         width: 11px;
@@ -247,6 +296,26 @@
       }
 
       .transcript w.said { opacity: 1; }
+
+      /* Every word is a place to start from, but only when the page owns the
+         audio — with the system voice speaking for itself there is no playhead
+         to move, and a word that invites a click it cannot honour is worse
+         than one that never invited it. */
+      .transcript.seekable w {
+        cursor: pointer;
+        border-radius: 3px;
+      }
+
+      .transcript.seekable w:hover {
+        background: rgba(255, 255, 255, 0.1);
+        /* A spread shadow pads the highlight without reflowing the line, which
+           padding on an inline element would. */
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
+      }
+
+      /* Brighten rather than dim: an unsaid word under the pointer is the one
+         about to be spoken. */
+      .transcript.seekable w:not(.said):hover { opacity: 0.62; }
 
       /* ---- rendered markdown -------------------------------------------- */
 
@@ -480,7 +549,7 @@
         }
 
         .send:active,
-        .stop:active {
+        .chip:active {
           transform: none;
         }
       }
@@ -494,13 +563,18 @@
   </head>
   <body>
     <div class="bubble" id="bubble">
+      <div class="grip" id="grip" title="Drag to resize" aria-hidden="true"></div>
+
       <div class="head">
         <div class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
         <div class="label" id="label">saynow</div>
-        <button class="stop" id="stop" title="Stop speaking" aria-label="Stop speaking">
-          <svg viewBox="0 0 8 8"><rect width="8" height="8" rx="1.5" /></svg>
+        <button class="chip transport hidden" id="play" title="Pause (space)" aria-label="Pause speaking">
+          <svg viewBox="0 0 8 8" class="bars">
+            <rect width="2.6" height="8" rx="1.1" /><rect x="5.4" width="2.6" height="8" rx="1.1" />
+          </svg>
+          <svg viewBox="0 0 8 8" class="tri"><path d="M1.2 0.6L7.4 4 1.2 7.4z" /></svg>
         </button>
-        <button class="stop close" id="close" title="Dismiss (esc)" aria-label="Dismiss">
+        <button class="chip close" id="close" title="Dismiss (esc)" aria-label="Dismiss">
           <svg viewBox="0 0 12 12" class="x"><path d="M3 3l6 6M9 3l-6 6" /></svg>
         </button>
       </div>
@@ -554,12 +628,19 @@
         reply: document.getElementById('reply'),
         field: document.getElementById('field'),
         send: document.getElementById('send'),
-        stop: document.getElementById('stop'),
+        play: document.getElementById('play'),
         close: document.getElementById('close'),
+        grip: document.getElementById('grip'),
         timer: document.getElementById('timer'),
         sent: document.getElementById('sentNote'),
         label: document.getElementById('label'),
       };
+
+      // Only present inside WKWebView, where the panel takes its size from
+      // whatever the page reports; the browser fallback has a window of its
+      // own. Declared here because the resize handle has to know which shell
+      // it is in, long before the block at the bottom that reports a height.
+      const sizeChannel = window.webkit?.messageHandlers?.size;
 
       /**
        * Bound first, deliberately.
@@ -653,15 +734,45 @@
         0,
       );
 
+      // The reveal animation only estimates pace, so it never starts the
+      // dismiss countdown on its own — the CLI reports when audio truly ends.
+      let audioEnded = !window.__SAYNOW__; // standalone preview has no audio
+      let revealFinished = false;
       let revealed = 0;
       const timers = [];
 
-      function litUpTo(count) {
-        for (; revealed < count && revealed < words.length; revealed += 1) {
+      /**
+       * Light the transcript up to `count` words, and dim anything past it.
+       *
+       * It has to go both ways now that a click can send the voice back to an
+       * earlier word: a highlight that only ever grew would leave the end of a
+       * sentence lit while the voice was still working its way back to it.
+       */
+      function revealTo(count) {
+        const target = Math.max(0, Math.min(count, words.length));
+        for (; revealed < target; revealed += 1) {
           nodes[revealed].classList.add('said');
           nodes[revealed].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         }
-        if (revealed >= words.length) finishSpeaking();
+        for (; revealed > target; revealed -= 1) {
+          nodes[revealed - 1].classList.remove('said');
+        }
+        revealFinished = revealed >= words.length;
+        if (revealFinished) maybeSettle();
+      }
+
+      /**
+       * How far into a clip covering words [from, to) the word `i` falls.
+       *
+       * Longer words take longer to say, so this is by weight rather than by
+       * count. Read forwards it tells the highlight which word to light; read
+       * backwards it turns a click on a word into a place to play from.
+       */
+      function fractionAt(i, from, to) {
+        const base = cumulative[from] ?? 0;
+        const span = (cumulative[to] ?? totalWeight) - base;
+        if (span <= 0) return 0;
+        return Math.min(1, Math.max(0, ((cumulative[i] ?? base) - base) / span));
       }
 
       /**
@@ -671,25 +782,21 @@
        * estimate is wrong for every cloud voice, which ignores the rate, and
        * it starts when the page loads rather than when sound actually begins.
        * Reading currentTime is exact by construction, and self-corrects if
-       * playback stalls or starts late.
+       * playback stalls, starts late, or is sent somewhere else entirely.
        */
       function followAudio(audio, chunk) {
         // Without a chunk this clip covers the whole transcript; with one it
         // covers a slice, and the highlight resumes where the last left off.
         const from = chunk ? chunk.firstWord : 0;
         const to = chunk ? chunk.firstWord + chunk.wordCount : words.length;
-        const base = cumulative[from] ?? 0;
-        const span = (cumulative[to] ?? totalWeight) - base;
 
         const tick = () => {
           const { currentTime, duration } = audio;
-          if (duration > 0 && span > 0) {
+          if (duration > 0) {
             const played = Math.min(currentTime / duration, 1);
             let count = from;
-            while (count < to && (cumulative[count] - base) / span <= played) {
-              count += 1;
-            }
-            litUpTo(count);
+            while (count < to && fractionAt(count, from, to) <= played) count += 1;
+            revealTo(count);
           }
           if (!audio.ended && !audio.paused) requestAnimationFrame(tick);
         };
@@ -700,18 +807,8 @@
       function followEstimate() {
         const perWord = 60000 / (state.rate || 175);
         words.forEach((_, i) => {
-          timers.push(setTimeout(() => litUpTo(i + 1), i * perWord));
+          timers.push(setTimeout(() => revealTo(i + 1), i * perWord));
         });
-      }
-
-      // The reveal animation only estimates pace, so it never starts the
-      // dismiss countdown on its own — the CLI reports when audio truly ends.
-      let audioEnded = !window.__SAYNOW__; // standalone preview has no audio
-      let revealFinished = false;
-
-      function finishSpeaking() {
-        revealFinished = true;
-        maybeSettle();
       }
 
       function maybeSettle() {
@@ -721,7 +818,69 @@
         else dismissAfter(900);
       }
 
+      /**
+       * There is speech again — resumed, or restarted from a word further up.
+       *
+       * The bubble stops looking finished and the countdown stands down, which
+       * is only safe because the audio reaching its end starts it again. Every
+       * way that can happen, including failing to play at all, goes through
+       * speechEnded().
+       */
+      function speaking() {
+        audioEnded = false;
+        el.bubble.classList.remove('done');
+        engage();
+      }
+
+      /** The audio is over, however it got there: hand the bubble to the timer. */
+      function speechEnded() {
+        audioEnded = true;
+        syncTransport();
+        revealTo(words.length);
+      }
+
       let player = null;
+
+      /**
+       * Play from a given word, filled in by whichever playback mode is in use.
+       *
+       * Left null when the page does not own the audio: the system voice
+       * speaking for itself has no playhead anyone can move. It is the single
+       * signal for whether the transport button and a clickable transcript are
+       * offered at all, so neither can ever appear without something behind it.
+       */
+      let seekAudio = null;
+
+      /**
+       * Move a clip's playhead once it knows how long it is.
+       *
+       * A clip only just asked for has no duration yet, and a seek against it
+       * is silently dropped — so it waits for the metadata instead.
+       */
+      function seekFraction(audio, fraction) {
+        const apply = () => {
+          if (audio.duration > 0) audio.currentTime = audio.duration * fraction;
+        };
+        if (audio.duration > 0) apply();
+        else audio.addEventListener('loadedmetadata', apply, { once: true });
+      }
+
+      /** Keep the button showing what the clip is really doing. */
+      function watchPlayback(audio) {
+        audio.addEventListener('play', syncTransport);
+        audio.addEventListener('pause', syncTransport);
+      }
+
+      /**
+       * The clip will not play at all: pace the transcript off the speaking
+       * rate rather than leaving it frozen mid-sentence. There is no playhead
+       * to pause or seek after this, and the button says so.
+       */
+      function fallBackToEstimate() {
+        audioEnded = true;
+        syncTransport();
+        followEstimate();
+      }
 
       if (state.chunks) {
         /**
@@ -732,59 +891,76 @@
          */
         let index = 0;
         let next = null;
+        let nextIndex = -1;
+        // Bumped on every start. A clip abandoned mid-sentence by a click
+        // still delivers its own 'ended' afterwards, and without this that
+        // would step the clip which replaced it on to the one after.
+        let generation = 0;
 
-        const startChunk = () => {
+        const startChunk = (fraction = 0) => {
+          const mine = (generation += 1);
           const chunk = state.chunks[index];
-          player = next ?? new Audio(withToken(`/audio/${index}`));
+
+          player?.pause();
+          // The warmed clip is only the right one if it is the clip we are
+          // actually starting; a click can land anywhere in the transcript.
+          player = next && nextIndex === index ? next : new Audio(withToken(`/audio/${index}`));
+          const current = player;
           next = null;
+          nextIndex = -1;
+          if (fraction > 0) seekFraction(current, fraction);
 
           // Warm the following clip while this one plays, so the join is not
           // audible as a gap.
           if (index + 1 < state.chunks.length) {
             next = new Audio(withToken(`/audio/${index + 1}`));
+            nextIndex = index + 1;
             next.preload = 'auto';
             next.load();
           }
 
-          player.addEventListener('play', () => followAudio(player, chunk));
-          player.addEventListener('ended', () => {
-            litUpTo(chunk.firstWord + chunk.wordCount);
+          watchPlayback(current);
+          current.addEventListener('play', () => followAudio(current, chunk));
+          current.addEventListener('ended', () => {
+            if (mine !== generation) return;
+            revealTo(chunk.firstWord + chunk.wordCount);
             index += 1;
-            if (index < state.chunks.length) {
-              startChunk();
-            } else {
-              audioEnded = true;
-              litUpTo(words.length);
-            }
+            if (index < state.chunks.length) startChunk();
+            else speechEnded();
           });
-          player.addEventListener('error', () => {
-            audioEnded = true;
-            litUpTo(words.length);
+          current.addEventListener('error', () => {
+            if (mine !== generation) return;
+            speechEnded();
           });
-          player.play().catch(() => {
-            audioEnded = true;
-            followEstimate();
+          current.play().catch(() => {
+            if (mine !== generation) return;
+            fallBackToEstimate();
           });
+        };
+
+        seekAudio = (word) => {
+          const found = state.chunks.findIndex((c) => word < c.firstWord + c.wordCount);
+          index = found === -1 ? state.chunks.length - 1 : found;
+          const chunk = state.chunks[index];
+          startChunk(fractionAt(word, chunk.firstWord, chunk.firstWord + chunk.wordCount));
         };
 
         startChunk();
       } else if (state.hasAudio) {
         // The page owns playback, so the highlight and the sound cannot drift.
         player = new Audio(withToken('/audio'));
+        watchPlayback(player);
         player.addEventListener('play', () => followAudio(player));
-        player.addEventListener('ended', () => {
-          audioEnded = true;
-          litUpTo(words.length);
-        });
-        player.addEventListener('error', () => {
-          // Fall back rather than sit silent with a frozen transcript.
-          audioEnded = true;
-          followEstimate();
-        });
-        player.play().catch(() => {
-          audioEnded = true;
-          followEstimate();
-        });
+        player.addEventListener('ended', speechEnded);
+        player.addEventListener('error', fallBackToEstimate);
+        player.play().catch(fallBackToEstimate);
+
+        seekAudio = (word) => {
+          seekFraction(player, fractionAt(word, 0, words.length));
+          // A clip that will not play is a clip that will never end, so it
+          // has to be treated as ended right away.
+          player.play().catch(speechEnded);
+        };
       } else {
         followEstimate();
         if (window.__SAYNOW__) {
@@ -800,7 +976,60 @@
 
       function revealAllNow() {
         timers.forEach(clearTimeout);
-        litUpTo(words.length);
+        revealTo(words.length);
+      }
+
+      /* ---- pausing and seeking -------------------------------------------- */
+
+      /**
+       * Show what the clip is really doing, rather than what it was last asked
+       * to do. Read from the element every time, so nothing latches: a flag
+       * left saying "paused" would leave a play button on a bubble that had
+       * long since finished speaking.
+       */
+      function syncTransport() {
+        const idle = !player || player.paused || player.ended || audioEnded;
+        el.bubble.classList.toggle('paused', idle);
+        el.play.title = idle ? 'Play (space)' : 'Pause (space)';
+        el.play.setAttribute('aria-label', idle ? 'Play' : 'Pause speaking');
+      }
+
+      /**
+       * Pause and resume.
+       *
+       * Pausing holds the bubble the way a half-written reply does — a
+       * deliberate act, with the same button to undo it. It cancels no
+       * countdown, because none runs while there is speech left to hear, and
+       * the one it defers is started by that speech reaching its end.
+       */
+      function togglePlayback() {
+        if (!player || !seekAudio) return;
+        if (!player.paused && !player.ended) {
+          player.pause();
+          syncTransport();
+          return;
+        }
+        // Nothing left to resume: play it again from the top rather than sit
+        // at the end doing nothing.
+        if (audioEnded || player.ended) return seekToWord(0);
+        speaking();
+        player.play().catch(speechEnded);
+        syncTransport();
+      }
+
+      /**
+       * Play from a word in the transcript.
+       *
+       * The highlight already knows where every word falls in the audio — that
+       * is how it lights them — so the same map read backwards turns a click
+       * into somewhere to start speaking from.
+       */
+      function seekToWord(word) {
+        if (!seekAudio) return;
+        speaking();
+        revealTo(word);
+        seekAudio(word);
+        syncTransport();
       }
 
       /* ---- dismiss countdown --------------------------------------------- */
@@ -834,8 +1063,19 @@
        */
       let hovering = false;
 
+      /**
+       * The drag in progress on the top edge, or null.
+       *
+       * A third way of being here, and the one with the least to hold it up: a
+       * pointer released outside the window sends no event anyone would notice.
+       * Three things end it — the capture being lost, a release anywhere in the
+       * page, and a move with no button held — so it cannot be the flag that
+       * finally strands a bubble.
+       */
+      let resizing = null;
+
       const drafting = () => el.field.value.trim().length > 0;
-      const holding = () => hovering || drafting();
+      const holding = () => hovering || drafting() || Boolean(resizing);
 
       function startDismissTimer(ms = state.dismissMs ?? 5000) {
         clearTimeout(dismissTimer);
@@ -1008,15 +1248,111 @@
         if (audioEnded) dismissAfter(state.ask ? undefined : 1200);
       });
 
-      el.stop.addEventListener('click', () => {
-        player?.pause();
-        post('/stop');
-        // You are on the button, so the pointer is already holding it open.
-        // Nothing here latches: silencing it is not a promise to keep it.
-        engage();
-        audioEnded = true; // pressing stop ends the audio by definition
-        revealAllNow();
-        el.field.focus();
+      // Pausing and seeking need a playhead in this page. With the system
+      // voice speaking for itself there is none, so neither is offered —
+      // rather than shown, clicked, and quietly ignored.
+      if (seekAudio) {
+        el.play.classList.remove('hidden');
+        el.transcript.classList.add('seekable');
+        syncTransport();
+      }
+
+      el.play.addEventListener('click', () => {
+        togglePlayback();
+        // The pointer is on the button, so it is already holding the bubble
+        // open. Looked at again rather than assumed, because a click is not
+        // proof of a pointer: Space on a focused button is a click too.
+        reconsider();
+        // Hand the keyboard back to the reply box. Left on the button, the
+        // next space would work the button instead of typing a space, and an
+        // answer half typed is worth more than a keyboard shortcut.
+        if (state.ask) focusField();
+      });
+
+      // Clicking a word plays from that word.
+      el.transcript.addEventListener('click', (event) => {
+        if (!seekAudio) return;
+        const word = event.target?.closest?.('w');
+        // A link is a link first. And a drag across the transcript ends in a
+        // click too, which is someone copying it rather than asking to hear
+        // that part again.
+        if (!word || word.closest('a')) return;
+        const selection = window.getSelection?.();
+        if (selection && !selection.isCollapsed) return;
+
+        const at = nodes.indexOf(word);
+        if (at >= 0) seekToWord(at);
+        if (state.ask) focusField();
+      });
+
+      /* ---- resizing -------------------------------------------------------- */
+
+      /**
+       * Drag the top edge for more or less of the transcript.
+       *
+       * Nothing here moves a window. The panel is pinned to the bottom-right
+       * corner and follows the height the page reports, so a taller transcript
+       * grows the bubble upwards on its own.
+       *
+       * Measured in screen coordinates, never page ones: the drag resizes the
+       * very page it would be measured against, so a hand held still would
+       * read as moving and the edge would run away from it.
+       */
+      function resizeTranscript(height) {
+        const chrome = el.bubble.offsetHeight - el.transcript.offsetHeight;
+        // The panel takes the page's word for its height and would happily run
+        // off the top of the screen; the browser fallback cannot outgrow its
+        // window at all.
+        const room = sizeChannel
+          ? (window.screen?.availHeight ?? 900) - 40
+          : (window.innerHeight ?? 900) - 8;
+        el.transcript.style.maxHeight = `${Math.max(48, Math.min(height, room - chrome))}px`;
+      }
+
+      el.grip.addEventListener('pointerdown', (e) => {
+        resizing = { from: e.screenY ?? 0, height: el.transcript.offsetHeight };
+        el.bubble.classList.add('resizing');
+        // Keeps the moves coming when the pointer outruns the edge, which it
+        // will: the bubble only grows as fast as the transcript has content.
+        el.grip.setPointerCapture?.(e.pointerId);
+        e.preventDefault?.();
+        reconsider();
+      });
+
+      // On the document rather than the handle: a captured move still bubbles
+      // here, and without capture this is the only way to hear a pointer that
+      // has left a strip twelve pixels tall — which it does immediately.
+      document.addEventListener('pointermove', (e) => {
+        if (!resizing) return;
+        // Released somewhere nobody told us about — outside the window, or
+        // with the capture taken away. A move with no button held ends it.
+        if (e.buttons === 0) return endResize();
+        resizeTranscript(resizing.height + (resizing.from - (e.screenY ?? 0)));
+      });
+
+      /** Let go of the edge, and hand the bubble back to the countdown. */
+      function endResize() {
+        if (!resizing) return;
+        resizing = null;
+        el.bubble.classList.remove('resizing');
+        reconsider();
+      }
+
+      // lostpointercapture arrives however the drag ends while captured. The
+      // rest are for a shell that has no pointer capture to lose, where a
+      // release still has to be heard wherever in the page it happens.
+      el.grip.addEventListener('lostpointercapture', endResize);
+      document.addEventListener('pointerup', endResize);
+      document.addEventListener('pointercancel', endResize);
+      window.addEventListener('blur', endResize);
+
+      // Space is the universal play/pause — but it is also a character, so
+      // with a reply half typed the reply box wins.
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== ' ' || document.activeElement === el.field) return;
+        e.preventDefault?.();
+        togglePlayback();
+        reconsider();
       });
 
       // Focus immediately, not after the entrance animation. Any delay here
@@ -1030,9 +1366,6 @@
       }
 
       /* ---- tell the native shell how tall we are -------------------------- */
-
-      // Only present inside WKWebView; the browser fallback sizes its own window.
-      const sizeChannel = window.webkit?.messageHandlers?.size;
 
       if (sizeChannel) {
         // offsetHeight is the laid-out height. getBoundingClientRect would

@@ -112,6 +112,22 @@ class Element {
     this.listeners.get(type).push(handler);
   }
 
+  setAttribute(name, value) {
+    this.attributes[name] = String(value);
+  }
+
+  setPointerCapture(id) {
+    this.captured = id;
+  }
+
+  releasePointerCapture() {
+    this.captured = null;
+  }
+
+  getAttribute(name) {
+    return this.attributes[name] ?? null;
+  }
+
   /** Fire a listener the way a user would, for assertions about wiring. */
   dispatch(type, event = {}) {
     for (const handler of this.listeners.get(type) ?? []) handler(event);
@@ -267,7 +283,7 @@ export function createDom({ search = '?t=testtoken', markup = '' } = {}) {
   const body = document.createElement('body');
   document.body = body;
 
-  for (const id of ['bubble', 'transcript', 'reply', 'field', 'send', 'stop', 'close', 'timer', 'sentNote', 'label']) {
+  for (const id of ['bubble', 'transcript', 'reply', 'field', 'send', 'play', 'close', 'grip', 'timer', 'sentNote', 'label']) {
     const el = document.createElement('div');
     el.ownerDocument = document;
     if (seeded.has(id)) el.className = seeded.get(id);

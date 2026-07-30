@@ -147,14 +147,26 @@ rather than one muddle.
 Whenever
 .B saynow
 speaks it also shows a small bubble in the bottom\-right corner carrying the
-transcript, lit word by word in time with the audio, with a stop button and a
-dismiss button. It fades
+transcript, lit word by word in time with the audio, with a play/pause button
+and a dismiss button. It fades
 out shortly after the audio ends, so a sentence you half\-heard is still
 readable. Pass \fB\-\-no\-ui\fR to suppress it.
 .PP
 Long text is rendered a sentence at a time so speech starts while the rest is
 still being made, rather than after the whole article has been synthesised. It
 stays one bubble showing the full transcript; the split is not visible.
+.PP
+Speech pauses and picks up again from the button in the header, or from the
+space bar when you are not typing a reply. Clicking any word in the transcript
+speaks from that word, and once the voice has finished the button plays the
+whole thing again. A paused bubble stays, the way one you are typing in does;
+the countdown starts again when the speech reaches its end. The system voice on
+Windows speaks for itself rather than through the bubble, so there it is a
+transcript and nothing more.
+.PP
+Dragging the top edge gives the transcript more room or less. The bubble is
+pinned to the corner of the screen, so it grows upwards, and nothing takes it
+away while you have hold of it.
 .PP
 On macOS the bubble is a floating panel: no Dock icon, no entry in the
 application switcher, and it does not take focus from the app you are using.

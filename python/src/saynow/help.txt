@@ -133,8 +133,8 @@ THE SETTINGS APP
 THE BUBBLE
   Whenever saynow speaks it also shows a small bubble in the bottom-right
   corner carrying the transcript, lit word by word in time with the audio,
-  with a stop button and a dismiss button. --from names the sender in its
-  header, which is worth using when several agents share a machine: the
+  with a play/pause button and a dismiss button. --from names the sender in
+  its header, which is worth using when several agents share a machine: the
   identity is then something you read rather than something you sit through.
 
   Long text is rendered a sentence at a time so speech starts while the rest
@@ -148,6 +148,18 @@ THE BUBBLE
   open, and the countdown resumes a moment after you leave. Anything typed
   keeps it until you send or dismiss it. Nothing else takes it away: there is
   no time limit on a bubble you are using.
+
+  Speech pauses and picks up again from the button in the header, or from the
+  space bar when you are not typing a reply. Clicking any word in the
+  transcript speaks from that word, so a sentence that went past while you
+  were looking elsewhere is one click away rather than gone; once the voice
+  has finished, the button plays the whole thing again. A paused bubble stays,
+  the way one you are typing in does, and the countdown starts again when the
+  speech reaches its end.
+
+  Drag the top edge to give the transcript more room or less. The bubble is
+  pinned to the corner, so it grows upwards; nothing takes it away while you
+  have hold of it.
 
   The bubble talks to saynow over a loopback server that is authenticated per
   message, so nothing else on the machine can answer a question on your behalf.
@@ -169,7 +181,8 @@ DOCUMENTS
     saynow --file news.md "Morning summary is ready"
 
   Keep the pointer on the bubble, or type in it, to hold it open while you
-  read. It counts down only once you are away from it.
+  read, and drag its top edge if a table wants more room than the default
+  height gives it. It counts down only once you are away from it.
 
   Markdown in the file is escaped before rendering and only tags saynow
   builds itself are emitted, so a document cannot script the bubble. Links
@@ -227,6 +240,9 @@ LIMITATIONS
   exits 2 immediately and --file is read aloud rather than shown.
   Long text is split so speech starts sooner in the npm build only; the pip
   build synthesises the whole passage before the first word.
+  Pausing and playing from a word need the bubble to be holding the audio,
+  which it is for every provider except the system voice on Windows. That one
+  speaks for itself, so its bubble is a transcript and nothing more.
 
 EXAMPLES
   saynow "the build finished"
