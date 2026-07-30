@@ -59,11 +59,16 @@ into their instructions.
 
 ## Releasing
 
-Bump `package.json`, `python/pyproject.toml`, `python/src/saynow/__init__.py`
-and the `man/saynow.1` header, commit as `Release <version>`, then
-`gh release create v<version>`. CI publishes to npm and PyPI over OIDC —
-**never publish by hand**, and note that publishing the GitHub release is the
-trigger, not pushing the tag.
+Bump `package.json`, `python/pyproject.toml`, `python/src/saynow/__init__.py`,
+the `man/saynow.1` header and `plugin/.claude-plugin/plugin.json`, commit as
+`Release <version>`, then `gh release create v<version>`. CI publishes to npm
+and PyPI over OIDC — **never publish by hand**, and note that publishing the
+GitHub release is the trigger, not pushing the tag.
+
+The release workflow checks all five against the tag and refuses to publish if
+any disagree. The plugin was the one that drifted, two releases behind, because
+it is installed straight from this repository and no registry was ever going to
+complain about it.
 
 ## Conventions
 

@@ -16,10 +16,10 @@
 #          environment: pypi. No token is stored — the job authenticates over
 #          OIDC, so there is no long-lived credential to leak or rotate.
 #
-# To cut a release: bump the version in package.json, python/pyproject.toml and
-# python/src/saynow/__init__.py, update the man page header, commit, then
-# publish a GitHub release tagged v<version>. The verify job refuses to publish
-# if any of those disagree with the tag.
+# To cut a release: bump the version in package.json, python/pyproject.toml,
+# python/src/saynow/__init__.py, the man page header and the plugin manifest,
+# commit, then publish a GitHub release tagged v<version>. The verify job
+# refuses to publish if any of those disagree with the tag.
 
 name: Release
 
@@ -52,12 +52,20 @@ jobs:
           NPM=$(node -p "require('./package.json').version")
           PY=$(grep -m1 '^version' python/pyproject.toml | cut -d'"' -f2)
           INIT=$(grep -m1 '__version__' python/src/saynow/__init__.py | cut -d'"' -f2)
+          MAN=$(sed -n '1s/.*"saynow \([0-9][^"]*\)".*/\1/p' man/saynow.1)
+          PLUGIN=$(node -p "require('./plugin/.claude-plugin/plugin.json').version")
 
-          echo "tag=$EXPECTED npm=$NPM pyproject=$PY __init__=$INIT"
-          if [ "$NPM" != "$EXPECTED" ] || [ "$PY" != "$EXPECTED" ] || [ "$INIT" != "$EXPECTED" ]; then
-            echo "::error::version mismatch — tag says $EXPECTED but the tree says npm=$NPM pyproject=$PY __init__=$INIT"
-            exit 1
-          fi
+          echo "tag=$EXPECTED npm=$NPM pyproject=$PY __init__=$INIT man=$MAN plugin=$PLUGIN"
+          # Every place a version is written, not only the ones that are
+          # published from here. The plugin is installed straight from this
+          # repository, so nothing downstream would have complained about it —
+          # and it sat two releases behind before anybody noticed.
+          for FOUND in "$NPM" "$PY" "$INIT" "$MAN" "$PLUGIN"; do
+            if [ "$FOUND" != "$EXPECTED" ]; then
+              echo "::error::version mismatch — tag says $EXPECTED but the tree says npm=$NPM pyproject=$PY __init__=$INIT man=$MAN plugin=$PLUGIN"
+              exit 1
+            fi
+          done
           echo "version=$EXPECTED" >> "$GITHUB_OUTPUT"
 
       - run: npm test
