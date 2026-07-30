@@ -47,7 +47,6 @@ export async function showBubble({
   // bubble open, not what it happens to be asking, and a question you are not
   // there for should not sit on the screen four times as long as one you are.
   dismissMs = 5000,
-  onStop,
   speech,
   audio,
   audioType,
@@ -135,7 +134,10 @@ export async function showBubble({
     const chunkMatch = req.method === 'GET' && /^\/audio\/(\d+)$/.exec(route);
     if (chunkMatch && chunks) {
       const index = Number(chunkMatch[1]);
-      prefetch(chunks, pending, index + 1);
+      // From this one rather than the next: clicking a word in the transcript
+      // can ask for a clip well past the lookahead, and one that was never
+      // started is a clip that never arrives.
+      prefetch(chunks, pending, index);
       Promise.resolve(pending.get(index))
         .then((rendered) => {
           if (!rendered?.audio) {
@@ -210,9 +212,6 @@ export async function showBubble({
     readJson(req).then((body) => {
       res.writeHead(204).end();
       switch (route) {
-        case '/stop':
-          onStop?.();
-          break;
         case '/reply':
           settle({ reason: 'reply', text: String(body.text ?? '').trim() });
           break;

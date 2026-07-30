@@ -19,8 +19,9 @@ saynow "the build finished, 42 tests passed"
 ```
 
 It speaks, and shows a bubble in the corner with the transcript lit word by
-word — so a sentence you half-heard is still readable. Works with no
-configuration, falling back to your OS's built-in voice: offline, free, no key.
+word — so a sentence you half-heard is still readable. Pause it, or click any
+word to hear it again from there. Works with no configuration, falling back to
+your OS's built-in voice: offline, free, no key.
 
 ## Install
 
@@ -147,6 +148,14 @@ means you never have to introduce yourself. Do not narrate routine progress.
 ```
 
 ## How the bubble works
+
+The header button pauses and resumes, and space does the same when you are not
+typing a reply. Clicking a word in the transcript speaks from that word, so a
+sentence that went past while you were reading something else is one click away
+rather than gone — and once the voice has finished, the button plays the whole
+thing again. A paused bubble stays put; the countdown starts again when the
+speech reaches its end. Drag the top edge to give a long document more room:
+the bubble is pinned to the corner, so it grows upwards.
 
 On macOS it is a borderless `NSPanel` hosting a `WKWebView`: no Dock icon, no
 entry in the app switcher, and it never steals focus. It compiles from

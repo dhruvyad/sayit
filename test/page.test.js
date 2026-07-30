@@ -24,6 +24,11 @@ function loadPage(state) {
   const { document, byId, search } = createDom({ markup: PAGE });
   const calls = { fetched: [], audio: [], players: [], events: [] };
 
+  // Frames are queued rather than run inline. The highlight's tick reschedules
+  // itself for as long as the clip is playing, so running one the moment it is
+  // asked for recurses until the stack gives out.
+  const frames = [];
+
   // The window is an event target too, and losing focus is how a half-finished
   // keystroke gets abandoned, so its listeners have to be reachable from here.
   const windowListeners = new Map();
@@ -48,15 +53,28 @@ function loadPage(state) {
         calls.audio.push(src);
         calls.players.push(this);
         this.src = src;
-        this.paused = false;
+        // A clip that has not been asked to play yet is paused, exactly as a
+        // real element reports it — the transport button reads this.
+        this.paused = true;
         this.ended = false;
         this.currentTime = 0;
         this.duration = 0;
+        this.bound = {};
+        // Every listener of a type runs, but the type is still callable as
+        // players[0].handlers.ended() to fire it the way the browser would.
+        this.handlers = {};
       }
       addEventListener(type, handler) {
-        (this.handlers ??= {})[type] = handler;
+        (this.bound[type] ??= []).push(handler);
+        this.handlers[type] = (event) => {
+          for (const fn of this.bound[type]) fn(event);
+        };
       }
       play() {
+        // Playing a finished clip rewinds it, so it is no longer ended —
+        // which is what makes the button say "play it again".
+        this.paused = false;
+        this.ended = false;
         return Promise.resolve();
       }
       pause() {
@@ -70,10 +88,7 @@ function loadPage(state) {
       }
       addEventListener() {}
     },
-    requestAnimationFrame: (fn) => {
-      fn();
-      return 1;
-    },
+    requestAnimationFrame: (fn) => frames.push(fn),
     setTimeout: () => 0,
     clearTimeout: () => {},
     ResizeObserver: class {
@@ -93,7 +108,21 @@ function loadPage(state) {
     for (const handler of windowListeners.get(type) ?? []) handler(event);
   };
 
-  return { document, byId, calls, fireOnWindow };
+  /** Run the frames asked for so far; a tick may queue the next one. */
+  const frame = () => {
+    for (const fn of frames.splice(0)) fn();
+  };
+
+  /** The word elements in reading order, however the transcript is built. */
+  const wordsIn = (node, found = []) => {
+    for (const child of node.children ?? []) {
+      if (child.tagName === 'W') found.push(child);
+      else wordsIn(child, found);
+    }
+    return found;
+  };
+
+  return { document, byId, calls, fireOnWindow, frame, words: () => wordsIn(byId.get('transcript')) };
 }
 
 const PLAIN = { text: 'The build finished, 42 tests passed.', ask: false, rate: 175, dismissMs: 5000 };
@@ -362,6 +391,300 @@ test('a reply in progress is never swallowed by the timer', () => {
     byId.get('timer').style.transform,
     'scaleX(0)',
     'losing a half-written reply is worse than a bubble that overstays',
+  );
+});
+
+/* ---- pausing and playing from a word ------------------------------------ */
+
+/** A clip that has run to the end, as the browser would leave it. */
+function finish(player) {
+  player.ended = true;
+  player.paused = true;
+  player.handlers.ended();
+}
+
+test('the transport button pauses the voice and starts it again', () => {
+  const { byId, calls } = loadPage({ ...PLAIN, hasAudio: true });
+  const player = calls.players[0];
+  const bubble = byId.get('bubble');
+
+  assert.equal(player.paused, false, 'it should be speaking to begin with');
+
+  byId.get('play').dispatch('click');
+  assert.equal(player.paused, true, 'the click must actually silence it');
+  assert.ok(bubble.classList.contains('paused'), 'and the button must show a triangle');
+
+  byId.get('play').dispatch('click');
+  assert.equal(player.paused, false, 'the same button starts it again');
+  assert.ok(!bubble.classList.contains('paused'), 'and goes back to bars');
+});
+
+test('a paused bubble is still handed back to the countdown when it finishes', () => {
+  // Pausing holds the bubble open, which is only safe because resuming gives
+  // it back. If the resumed audio could end without starting the countdown,
+  // the bubble would sit on screen for good and the caller would wait with it.
+  const { byId, calls } = loadPage({ ...PLAIN, hasAudio: true });
+  const player = calls.players[0];
+
+  byId.get('play').dispatch('click'); // paused
+  byId.get('bubble').dispatch('mouseleave'); // and walked away from
+  assert.notEqual(
+    byId.get('timer').style.transform,
+    'scaleX(0)',
+    'nothing should count down while there is speech left to hear',
+  );
+
+  byId.get('play').dispatch('click'); // back, and resumed
+  finish(player);
+
+  assert.equal(byId.get('timer').style.transform, 'scaleX(0)', 'the countdown must run');
+  assert.equal(byId.get('timer').style.opacity, '1', 'and be visible');
+});
+
+test('the button plays it again once the voice has finished', () => {
+  const { byId, calls, words } = loadPage({ ...PLAIN, hasAudio: true });
+  const player = calls.players[0];
+  player.duration = 10;
+  finish(player);
+
+  assert.ok(byId.get('bubble').classList.contains('done'));
+  byId.get('play').dispatch('click');
+
+  assert.equal(player.paused, false, 'it should be speaking again');
+  assert.equal(player.currentTime, 0, 'from the top');
+  assert.ok(!byId.get('bubble').classList.contains('done'), 'and no longer look finished');
+  assert.ok(!words()[0].classList.contains('said'), 'with the transcript back to the start');
+});
+
+test('clicking a word plays from that word', () => {
+  const { byId, calls, words } = loadPage({ ...PLAIN, hasAudio: true });
+  const player = calls.players[0];
+  player.duration = 10;
+
+  const at = (i) => {
+    byId.get('transcript').dispatch('click', { target: words()[i] });
+    return player.currentTime;
+  };
+
+  assert.equal(at(0), 0, 'the first word is the beginning of the clip');
+  const third = at(2);
+  const fifth = at(4);
+  assert.ok(third > 0 && third < 10, `expected a position inside the clip, got ${third}`);
+  assert.ok(fifth > third, 'a later word must be a later position');
+  assert.equal(player.paused, false, 'and it plays rather than just moving the playhead');
+});
+
+test('clicking back into the transcript dims what has not been said again', () => {
+  const { byId, calls, words } = loadPage({ ...PLAIN, hasAudio: true });
+  const player = calls.players[0];
+  player.duration = 10;
+  finish(player);
+  assert.ok(words().every((w) => w.classList.contains('said')), 'all lit at the end');
+
+  byId.get('transcript').dispatch('click', { target: words()[2] });
+
+  assert.ok(words()[1].classList.contains('said'), 'what was already said stays lit');
+  assert.ok(!words()[2].classList.contains('said'), 'the word being spoken again does not');
+  assert.ok(!words()[5].classList.contains('said'), 'nor anything after it');
+});
+
+test('playing from a word stops the countdown, and the end starts it again', () => {
+  // This is the one rule the bubble has. Sending the voice back cancels a
+  // countdown that was already running, so the audio reaching its end has to
+  // be able to start it — otherwise a click on a word strands the bubble.
+  const { byId, calls, words } = loadPage({ ...PLAIN, ask: true, hasAudio: true });
+  const player = calls.players[0];
+  player.duration = 10;
+  finish(player);
+  assert.equal(byId.get('timer').style.transform, 'scaleX(0)', 'counting down at the end');
+
+  byId.get('transcript').dispatch('click', { target: words()[2] });
+  assert.equal(byId.get('timer').style.opacity, '0', 'and holding once it speaks again');
+
+  finish(player);
+  assert.equal(byId.get('timer').style.transform, 'scaleX(0)', 'the countdown must come back');
+  assert.equal(byId.get('timer').style.opacity, '1');
+});
+
+const CHUNKED = {
+  ...PLAIN,
+  text: 'One two three. Four five six. Seven eight nine.',
+  chunks: [
+    { firstWord: 0, wordCount: 3 },
+    { firstWord: 3, wordCount: 3 },
+    { firstWord: 6, wordCount: 3 },
+  ],
+};
+
+test('clicking a word in a later clip switches to that clip', () => {
+  const { byId, calls, words } = loadPage(CHUNKED);
+  const clip = (n) => calls.players.find((p) => p.src.startsWith(`/audio/${n}?`));
+
+  // Third clip: past the one warmed behind the first, so it has to be asked
+  // for. The server renders on demand, which is why it is fetched at all.
+  byId.get('transcript').dispatch('click', { target: words()[7] });
+
+  assert.ok(clip(2), 'the clip holding that word should have been requested');
+  assert.equal(clip(2).paused, false, 'and be the one now speaking');
+  assert.equal(clip(0).paused, true, 'while the clip it interrupted is silent');
+  assert.equal(clip(1).paused, true, 'and the one it skipped never starts');
+});
+
+test('a clip abandoned by a click cannot step the one that replaced it', () => {
+  // The abandoned clip still delivers its own 'ended' afterwards. Acting on
+  // it would advance past the clip the user just asked for — ending the
+  // bubble while it was still speaking.
+  const { byId, calls, words } = loadPage(CHUNKED);
+  const clip = (n) => calls.players.find((p) => p.src.startsWith(`/audio/${n}?`));
+
+  byId.get('transcript').dispatch('click', { target: words()[7] });
+  finish(clip(0)); // the interrupted clip, arriving late
+
+  assert.equal(clip(2).paused, false, 'the clip the user asked for keeps speaking');
+  assert.ok(
+    !byId.get('bubble').classList.contains('done'),
+    'and the bubble must not settle while it does',
+  );
+});
+
+test('neither pausing nor seeking is offered when the page has no audio', () => {
+  // The system voice speaks for itself: there is no playhead in the page to
+  // move, so a button and a clickable word would both be lies.
+  const silent = loadPage(PLAIN);
+  assert.ok(silent.byId.get('play').classList.contains('hidden'), 'no transport button');
+  assert.ok(!silent.byId.get('transcript').classList.contains('seekable'));
+
+  const playing = loadPage({ ...PLAIN, hasAudio: true });
+  assert.ok(!playing.byId.get('play').classList.contains('hidden'), 'but one when it can');
+  assert.ok(playing.byId.get('transcript').classList.contains('seekable'));
+});
+
+test('a link in a document is a link, not a place to play from', () => {
+  const { byId, calls } = loadPage({
+    ...PLAIN,
+    hasAudio: true,
+    text: 'Read the report',
+    html: '<p><a href="https://example.com">Read the report</a></p>',
+  });
+  const player = calls.players[0];
+  player.duration = 10;
+  player.currentTime = 4;
+
+  const words = [];
+  const walk = (node) => {
+    for (const child of node.children ?? []) {
+      if (child.tagName === 'W') words.push(child);
+      else walk(child);
+    }
+  };
+  walk(byId.get('transcript'));
+
+  byId.get('transcript').dispatch('click', { target: words[1] });
+  assert.equal(player.currentTime, 4, 'following the link is what the click is for');
+});
+
+test('space pauses, unless a reply is being typed', () => {
+  const { document, calls } = loadPage({ ...PLAIN, ask: true, hasAudio: true });
+  const player = calls.players[0];
+
+  // The page focuses the reply box itself, so space is a character first.
+  document.dispatch('keydown', { key: ' ' });
+  assert.equal(player.paused, false, 'a space typed into a reply is a space');
+
+  document.activeElement = null;
+  document.dispatch('keydown', { key: ' ' });
+  assert.equal(player.paused, true, 'with nothing being typed it is play/pause');
+});
+
+test('the highlight follows the playhead wherever it is sent', () => {
+  const { calls, frame, words } = loadPage({ ...PLAIN, hasAudio: true });
+  const player = calls.players[0];
+  player.duration = 10;
+
+  player.currentTime = 10;
+  player.handlers.play();
+  frame();
+  assert.ok(words().every((w) => w.classList.contains('said')), 'lit up to the playhead');
+
+  player.currentTime = 0;
+  frame();
+  assert.ok(!words()[1].classList.contains('said'), 'and dimmed again when it goes back');
+});
+
+/* ---- dragging the top edge ---------------------------------------------- */
+
+/**
+ * Take hold of the top edge and pull it to another height.
+ *
+ * Screen coordinates, because the page is resized by the very drag it would
+ * otherwise be measured against. Moves go to the document: that is where the
+ * page listens, since the handle is twelve pixels tall and a drag leaves it
+ * with the first movement.
+ */
+const drag = ({ byId, document }, from, to, buttons = 1) => {
+  byId.get('grip').dispatch('pointerdown', { screenY: from, pointerId: 1, buttons: 1 });
+  document.dispatch('pointermove', { screenY: to, pointerId: 1, buttons });
+};
+
+test('dragging the top edge up shows more of the transcript, down less', () => {
+  const page = loadPage({ ...PLAIN, hasAudio: true });
+  const transcript = page.byId.get('transcript');
+
+  // The stub lays every element out at 120px tall.
+  drag(page, 500, 400);
+  assert.equal(transcript.style.maxHeight, '220px', 'up is taller');
+
+  page.byId.get('grip').dispatch('lostpointercapture');
+  drag(page, 500, 560);
+  assert.equal(transcript.style.maxHeight, '60px', 'down is shorter');
+});
+
+test('a drag holds the bubble open, and letting go hands it back', () => {
+  const page = loadPage({ ...PLAIN, ask: true, hasAudio: true });
+  finish(page.calls.players[0]);
+  const bar = page.byId.get('timer');
+  assert.equal(bar.style.transform, 'scaleX(0)', 'counting down to begin with');
+
+  drag(page, 500, 420);
+  // Dragging up takes the pointer off the top of the bubble on the way.
+  page.byId.get('bubble').dispatch('mouseleave');
+  assert.equal(bar.style.opacity, '0', 'nothing may take the bubble mid-drag');
+
+  page.byId.get('grip').dispatch('lostpointercapture');
+  assert.equal(bar.style.transform, 'scaleX(0)', 'and the countdown comes back');
+  assert.equal(bar.style.opacity, '1');
+});
+
+test('a release nobody heard about does not strand the bubble', () => {
+  // Let go outside the window, or with the capture taken away, and no end-of-
+  // drag event arrives at all. The next move without a button held is the
+  // last thing standing between that and a bubble that never closes.
+  const page = loadPage({ ...PLAIN, ask: true, hasAudio: true });
+  finish(page.calls.players[0]);
+
+  drag(page, 500, 420);
+  page.byId.get('bubble').dispatch('mouseleave');
+  // The button was let go where nothing could hear it. The next move, with
+  // nothing held down, is the only thing that says so.
+  page.document.dispatch('pointermove', { screenY: 410, pointerId: 1, buttons: 0 });
+
+  assert.equal(page.byId.get('timer').style.transform, 'scaleX(0)', 'it must count down again');
+  assert.equal(page.byId.get('timer').style.opacity, '1');
+});
+
+test('the transcript is never dragged shorter than a line or taller than the screen', () => {
+  const page = loadPage({ ...PLAIN, hasAudio: true });
+  const transcript = page.byId.get('transcript');
+
+  drag(page, 500, 5000);
+  assert.equal(transcript.style.maxHeight, '48px', 'still readable');
+
+  page.byId.get('grip').dispatch('lostpointercapture');
+  drag(page, 500, -5000);
+  // The stub reports no screen, so the fallback of 900 stands in for one.
+  assert.ok(
+    Number.parseInt(transcript.style.maxHeight, 10) < 900,
+    `a bubble taller than the screen runs off the top of it, got ${transcript.style.maxHeight}`,
   );
 });
 

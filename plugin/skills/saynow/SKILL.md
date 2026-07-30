@@ -75,6 +75,11 @@ The bubble holds open for as long as their pointer is on it or they are typing
 in it, so a document is read at their pace rather than a timer's. Left alone it
 goes five seconds after the voice stops.
 
+They can pause the voice from the bubble, or click a word in the transcript to
+hear it again from there — so a long line is recoverable rather than gone. A
+paused bubble waits for them, which means `--ask` may block for longer than the
+speech itself takes. That is normal; keep waiting for the exit code.
+
 ## Choosing a voice
 
 The default needs no key and works offline. For better audio, set

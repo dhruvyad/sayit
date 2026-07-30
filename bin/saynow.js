@@ -279,8 +279,6 @@ async function speakCommand(text, flags) {
     return;
   }
 
-  const stop = new AbortController();
-
   // Long text is rendered in pieces so the first sentence plays while the rest
   // is still being made. It stays one bubble: the split is a synthesis detail.
   const pieces = await plan(text, flags).catch(() => null);
@@ -295,7 +293,6 @@ async function speakCommand(text, flags) {
         document: flags.document,
         chunks: pieces,
         speech: Promise.resolve(),
-        onStop: () => stop.abort(),
       });
       if (!flags.ask) return;
       if (answer.reason === 'reply' && answer.text) return void console.log(answer.text);
@@ -307,7 +304,9 @@ async function speakCommand(text, flags) {
   }
 
   // Ask for the bytes rather than letting speak() play them: the page plays
-  // the audio so the transcript can follow its clock exactly.
+  // the audio so the transcript can follow its clock exactly. The signal ends
+  // whatever is left of it once the bubble is gone.
+  const stop = new AbortController();
   let handed = null;
   const speech = speak(text, { ...flags, handoff: true, signal: stop.signal })
     .then((result) => {
@@ -335,7 +334,6 @@ async function speakCommand(text, flags) {
       speech: handed ? Promise.resolve() : speech,
       audio: handed?.audio,
       audioType: handed?.ext === 'mp3' ? 'audio/mpeg' : 'audio/wav',
-      onStop: () => stop.abort(),
     });
   } finally {
     release?.();
